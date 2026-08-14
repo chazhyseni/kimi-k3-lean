@@ -140,20 +140,33 @@ need git "install git first (apt/dnf/brew/winget/git-for-windows)"
 PLATFORM="$K3_OS"
 ok "platform: $PLATFORM (python: $K3_PY $K3_PY_VERSION, nproc: $K3_NPROC)"
 
-# ----- 2. clone or update -----
 if [ -d "$K3_DIR/.git" ]; then
     say "updating $K3_DIR"
     git -C "$K3_DIR" fetch --depth 1 origin "$K3_BRANCH" >/dev/null 2>&1 \
         || die "could not fetch $K3_BRANCH from origin"
     git -C "$K3_DIR" reset --hard "origin/$K3_BRANCH" >/dev/null 2>&1 \
         || die "could not reset to origin/$K3_BRANCH"
-    ok "updated"
+    # Sanity check: confirm HEAD == origin/HEAD after the reset. Anything
+    # else indicates a race (concurrent editor, lock contention) or partial
+    # checkout; surface it loudly so the user knows what HEAD they're running.
+    local_head=$(git -C "$K3_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)
+    origin_head=$(git -C "$K3_DIR" rev-parse --short "origin/$K3_BRANCH" 2>/dev/null || echo unknown)
+    if [ "$local_head" = "$origin_head" ] && [ "$local_head" != "unknown" ]; then
+        ok "updated (HEAD $local_head)"
+    else
+        warn "post-reset HEAD is $local_head, origin is $origin_head; retrying once:"
+        git -C "$K3_DIR" reset --hard "origin/$K3_BRANCH" >/dev/null 2>&1 \
+            || die "could not reset on retry"
+        local_head=$(git -C "$K3_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)
+        ok "retry OK (HEAD $local_head)"
+    fi
 elif [ -d "$K3_DIR" ]; then
     die "$K3_DIR exists but is not a git repo. Move it or set K3_DIR to a different path."
 else
     say "cloning to $K3_DIR"
-    git clone --depth 1 --branch "$K3_BRANCH" "$K3_REPO_URL" "$K3_DIR"
-    ok "cloned"
+    git clone --depth 1 --branch "$K3_BRANCH" "$K3_REPO_URL" "$K3_DIR" \
+        || die "git clone failed"
+    ok "cloned (HEAD $(git -C "$K3_DIR" rev-parse --short HEAD))"
 fi
 cd "$K3_DIR"
 
@@ -192,6 +205,38 @@ export LD_LIBRARY_PATH="$K3_DIR/bin:${LD_LIBRARY_PATH:-}"
 # port. Idempotent. The port match matters because the user might
 # legitimately have two k3-lean installs running on different ports
 # (e.g. test on 8081 alongside prod on 8080).
+#
+# Belt and suspenders: if the PID file is missing (e.g. cleared during
+# git reset --hard) but serve/__main__.py is still running anywhere in
+# $K3_DIR, scan for it and kill. Without this, an updated bootstrap can't
+# free up the port for a brand new server.
+_kill_prior_serve() {
+    local sig="$1"
+    shift
+    for p in "$@"; do
+        if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
+            local pdir=""
+            if command -v lsof >/dev/null 2>&1; then
+                pdir=$(lsof -p "$p" -a -d cwd -F n 2>/dev/null | head -1 | sed "s/^n//")
+            elif [ -L "/proc/$p/cwd" ]; then
+                pdir=$(readlink "/proc/$p/cwd" 2>/dev/null || echo "")
+            fi
+            case "$pdir" in
+                "$K3_DIR"*)
+                    warn "killing prior server (PID $p, $sig)"
+                    if [ "$sig" = "SIGKILL" ]; then
+                        kill -9 "$p" 2>/dev/null || true
+                    else
+                        kill "$p" 2>/dev/null || true
+                    fi
+                    ;;
+                *) : ;;
+            esac
+        fi
+    done
+}
+
+# Source 1: PID file
 if [ -f "$K3_DIR/server.pid" ]; then
     old_pid=$(cat "$K3_DIR/server.pid" 2>/dev/null || echo "")
     if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
@@ -208,6 +253,23 @@ if [ -f "$K3_DIR/server.pid" ]; then
         fi
     fi
     rm -f "$K3_DIR/server.pid"
+fi
+
+# Source 2: anything serving from our repo, even if the PID file is gone.
+prior_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}")
+if [ -n "$prior_pids" ]; then
+    warn "found stale serve/__main__.py still running in $K3_DIR (PID(s): $prior_pids)"
+    _kill_prior_serve SIGTERM $prior_pids
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        still=$(echo "$prior_pids" | tr " " "\n" | while read p; do ps -p "$p" -o pid= 2>/dev/null; done)
+        [ -z "$still" ] && break
+        sleep 0.3
+    done
+    # Recheck; SIGKILL the survivors
+    still_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}")
+    if [ -n "$still_pids" ]; then
+        _kill_prior_serve SIGKILL $still_pids
+    fi
 fi
 # Create a small env file the user can `source` to recover the API key
 cat > "$K3_DIR/server.env" <<EOF
