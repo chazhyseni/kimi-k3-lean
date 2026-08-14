@@ -140,18 +140,6 @@ examples:
 
     model_id = args.model_id or model.name
 
-    try:
-        engine = Engine(
-            str(model),
-            preset=args.preset,
-            trunk_dir=args.trunk_dir,
-            config_path=args.config,
-            tok_dir=args.tok_dir,
-            layers=args.layers,
-            cache_gb=args.cache_gb,
-            trunk_gb=args.trunk_gb,
-            incremental=not args.no_incremental,
-        )
     engine_loaded = False
     engine = None
     try:
@@ -174,6 +162,14 @@ examples:
         print("download weights via:", file=sys.stderr)
         print(f"  bash $K3_DIR/scripts/setup-and-serve.sh --download-only  (K3_DIR default: ~/.kimi-k3-lean)", file=sys.stderr)
 
+    # Wrap engine (or its absence) in a uniform interface for the http
+    # layer. When the real engine loaded, use it directly. When it didn't,
+    # the wrapper exposes the same .model_id / .n_layers / .vocab_size /
+    # .ctx_size as Engine does, so /v1/models still returns a useful body;
+    # /v1/chat/completions returns the engine_error envelope.
+    if engine is None:
+        engine = _NullEngine(model_id=model_id or "kimi-k3")
+
     print(f"kimi-k3-lean OpenAI server")
     print(f"  model    {model_id} — {engine.model_id}, "
           f"{engine.n_layers} layers, vocab {engine.vocab_size}, "
@@ -183,14 +179,6 @@ examples:
         print(f"\nWARNING: listening on {args.host} with no --api-key: "
               f"anyone who can reach this port can use the model.",
               file=sys.stderr)
-
-    # Wrap engine (or its absence) in a uniform interface for the http
-    # layer. When the real engine loaded, use it directly. When it didn't,
-    # the wrapper exposes the same .model_id / .n_layers / .vocab_size /
-    # .ctx_size as Engine does, so /v1/models still returns a useful body;
-    # /v1/chat/completions returns the engine_error envelope.
-    if engine is None:
-        engine = _NullEngine(model_id=model_id or "kimi-k3")
 
     srv = serve(
         engine,
