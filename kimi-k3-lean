@@ -1,0 +1,354 @@
+#!/usr/bin/env bash
+# kimi-k3-lean — CLI launcher for running a Kimi K3 OpenAI server.
+#
+# This script is downloaded into ~/.local/bin by the installer and is
+# the only entry point most users need. It wraps the repo's serve/
+# entry-point script with sensible defaults so users don't have to
+# figure out PATH, PYTHONPATH, or which library file to point at.
+#
+# Usage:
+#   kimi-k3-lean serve --model /path/to/k3 [--port 8080] [--api-key ...]
+#   kimi-k3-lean status
+#   kimi-k3-lean stop
+#   kimi-k3-lean models / list
+#   kimi-k3-lean chat --model kimi-k3 --message "hello"
+#   kimi-k3-lean install   # no-op if already installed; prints help
+#   kimi-k3-lean doctor    # prints what's installed, what's missing
+#   kimi-k3-lean uninstall # stops server, removes the launcher itself
+#
+# Env (set once, persist via kimi-k3-lean config):
+#   K3_HOME         repo checkout (~/.kimi-k3-lean)
+#   K3_MODEL        default model dir (overridable per command)
+#   K3_PORT         default 8080
+#   K3_HOST         default 127.0.0.1
+#   K3_API_KEY      bearer token; one auto-generated and stored if missing
+#   K3_MODEL_NAME   advertised id (default kimi-k3)
+
+set -euo pipefail
+
+# ----- finding the repo -----
+_k3_find_repo() {
+    # 1. explicit K3_HOME wins
+    if [ -n "${K3_HOME:-}" ] && [ -f "$K3_HOME/serve/__main__.py" ]; then
+        echo "$K3_HOME"
+        return 0
+    fi
+    # 2. THIS script sits in the repo root (dev install: ./kimi-k3-lean serve)
+    local me="${BASH_SOURCE[0]}"
+    while [ -L "$me" ]; do me=$(readlink "$me"); done
+    local script_dir
+    script_dir=$(cd "$(dirname "$me")" && pwd)
+    if [ -f "$script_dir/serve/__main__.py" ]; then
+        echo "$script_dir"
+        return 0
+    fi
+    # 3. the launcher next to the clone at ~/.kimi-k3-lean/kimi-k3-lean
+    if [ -f "$HOME/.kimi-k3-lean/serve/__main__.py" ]; then
+        echo "$HOME/.kimi-k3-lean"
+        return 0
+    fi
+    # 4. install layout where the launcher lives at <prefix>/bin/kimi-k3-lean
+    #    and the clone sits at <prefix>/repo
+    local prefix
+    prefix=$(dirname "$(dirname "$me")")
+    if [ -f "$prefix/repo/serve/__main__.py" ]; then
+        echo "$prefix/repo"
+        return 0
+    fi
+    # 5. XDG-style fallback
+    if [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean/serve/__main__.py" ]; then
+        echo "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean"
+        return 0
+    fi
+    return 1
+}
+
+if ! K3_HOME_RESOLVED=$(_k3_find_repo); then
+    cat >&2 <<'EOF'
+kimi-k3-lean: no repo found.
+
+This launcher expects the kimi-k3-lean repo at one of:
+  $K3_HOME                 (env var)
+  <script dir>/../repo
+  ~/.kimi-k3-lean
+  $XDG_DATA_HOME/kimi-k3-lean
+
+Install with:
+  curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/install.sh | bash
+EOF
+    exit 1
+fi
+export K3_HOME="$K3_HOME_RESOLVED"
+
+K3_CONF="$K3_HOME/server.env"
+# precedence: shell env > conf file > built-in defaults
+# Load the file only for vars the user did NOT set on the command line.
+[ -f "$K3_CONF" ] || true  # exists check is harmless
+__env_set() { [ -n "${!1:-}" ]; }
+__load_if_unset() {
+    local var="$1" def="$2"
+    if [ -z "${!var:-}" ] && [ -f "$K3_CONF" ]; then
+        # match ^VAR= at start of line, take value
+        local v
+        v=$(grep -E "^${var}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2-)
+        if [ -n "$v" ]; then
+            printf -v "$var" '%s' "$v"
+            export "$var"
+        fi
+    fi
+    : "${!var:=$def}"
+}
+__load_if_unset K3_PORT 8080
+__load_if_unset K3_HOST 127.0.0.1
+__load_if_unset K3_API_KEY ""
+__load_if_unset K3_MODEL "${K3_MODEL_DIR:-}"
+__load_if_unset K3_MODEL_NAME kimi-k3
+
+# ----- subcommands -----
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+_k3_status() {
+    if [ -f "$K3_HOME/server.pid" ]; then
+        local pid
+        pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || echo "")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "kimi-k3-lean running: PID $pid  http://$K3_HOST:$K3_PORT  $K3_HOME/server.log"
+            return 0
+        fi
+    fi
+    echo "kimi-k3-lean: no server running on http://$K3_HOST:$K3_PORT"
+    return 1
+}
+
+_k3_stop() {
+    if [ -f "$K3_HOME/server.pid" ]; then
+        local pid
+        pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || echo "")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "killing PID $pid"
+            kill "$pid" 2>/dev/null || true
+            for i in 1 2 3 4 5; do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.2
+            done
+        fi
+        rm -f "$K3_HOME/server.pid"
+    fi
+    # also free the port if anything else is bound
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k "${K3_PORT}/tcp" 2>/dev/null || true
+    fi
+    echo "stopped."
+}
+
+_k3_serve() {
+    if [ ! -d "$K3_MODEL" ]; then
+        cat >&2 <<EOF
+No model directory found at: $K3_MODEL
+
+To download the real Kimi K3 weights (~982 GB, ~4 hours):
+  kimi-k3-lean fetch
+or
+  $K3_HOME/scripts/setup-and-serve.sh --download-only
+
+Until then the server will start, return 200 on /v1/models, and
+return a documented engine_error envelope from /v1/chat/completions.
+That lets you test the HTTP scaffold end-to-end immediately.
+EOF
+        mkdir -p "$K3_MODEL"
+    fi
+    _k3_stop  # idempotent
+    : "${K3_API_KEY:=$(openssl rand -hex 16 2>/dev/null || echo "k3-$$")}"
+
+    # write the env so future shells / uninstall know the token
+    cat > "$K3_CONF" <<EOF
+K3_HOME=$K3_HOME
+K3_HOST=$K3_HOST
+K3_PORT=$K3_PORT
+K3_API_KEY=$K3_API_KEY
+K3_MODEL=$K3_MODEL
+K3_MODEL_NAME=$K3_MODEL_NAME
+EOF
+    chmod 600 "$K3_CONF"
+
+    cd "$K3_HOME"
+    # ensure libk3.so is on LD_LIBRARY_PATH even if the user moved the launcher
+    export LD_LIBRARY_PATH="$K3_HOME/bin:${LD_LIBRARY_PATH:-}"
+    python3 -u serve/__main__.py "$K3_MODEL" \
+        --host "$K3_HOST" --port "$K3_PORT" \
+        --api-key "$K3_API_KEY" --model-id "$K3_MODEL_NAME" \
+        "$@" \
+        >>"$K3_HOME/server.log" 2>&1 </dev/null &
+    local pid=$!
+    echo "$pid" > "$K3_HOME/server.pid"
+    echo "started: PID $pid  http://$K3_HOST:$K3_PORT"
+    echo "log:     $K3_HOME/server.log"
+    echo "token:   $K3_API_KEY  (in $K3_CONF, mode 0600)"
+    # wait for /v1/models to return 200 (or 30s)
+    local ready=0
+    for i in $(seq 1 30); do
+        local code
+        code=$(curl -sS --max-time 1 -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $K3_API_KEY" \
+            "http://$K3_HOST:$K3_PORT/v1/models" 2>/dev/null || echo 000)
+        if [ "$code" = "200" ]; then ready=1; break; fi
+        sleep 1
+    done
+    if [ "$ready" = "1" ]; then
+        echo "ready."
+    else
+        echo "not ready after 30s; check $K3_HOME/server.log"
+        return 1
+    fi
+}
+
+_k3_models() {
+    if ! _k3_status >/dev/null 2>&1; then
+        echo "no server running. start with: kimi-k3-lean serve"
+        return 1
+    fi
+    : "${K3_API_KEY:?no token; run 'kimi-k3-lean config set api_key ...' first}"
+    curl -sS -H "Authorization: Bearer $K3_API_KEY" "http://$K3_HOST:$K3_PORT/v1/models"
+}
+
+_k3_chat() {
+    if ! _k3_status >/dev/null 2>&1; then
+        echo "no server running. start with: kimi-k3-lean serve &"
+        return 1
+    fi
+    local model="" message="" stream=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --model)  model="$2"; shift 2 ;;
+            --message|-m) message="$2"; shift 2 ;;
+            --stream) stream=1; shift ;;
+            *) message="$1"; shift ;;
+        esac
+    done
+    : "${model:=$K3_MODEL_NAME}"
+    : "${message:?no --message given}"
+    : "${K3_API_KEY:?no token}"
+    local payload
+    payload=$(python3 -c "
+import json,sys
+print(json.dumps({'model':sys.argv[1],'messages':[{'role':'user','content':sys.argv[2]}],'max_tokens':256,'stream': bool(int(sys.argv[3]))}))
+" "$model" "$message" "$stream")
+    if [ "$stream" = "1" ]; then
+        curl -sSN -X POST -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $K3_API_KEY" \
+            "http://$K3_HOST:$K3_PORT/v1/chat/completions" \
+            -d "$payload"
+    else
+        curl -sS -X POST -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $K3_API_KEY" \
+            "http://$K3_HOST:$K3_PORT/v1/chat/completions" \
+            -d "$payload"
+    fi
+}
+
+_k3_fetch() {
+    exec "$K3_HOME/scripts/setup-and-serve.sh" --download-only
+}
+
+_k3_doctor() {
+    echo "== kimi-k3-lean doctor =="
+    echo "repo:       $K3_HOME"
+    echo "engine:     $(test -f "$K3_HOME/bin/libk3.so" && file "$K3_HOME/bin/libk3.so" | head -1 || echo MISSING)"
+    echo "model dir:  ${K3_MODEL:-NOT SET}"
+    if [ -n "$K3_MODEL" ] && [ -d "$K3_MODEL" ]; then
+        echo "  contains: $(ls "$K3_MODEL" | head -3 | tr '\n' ' ')"
+        echo "            $(ls "$K3_MODEL" | wc -l) files total"
+    fi
+    echo "port:       $K3_PORT"
+    echo "host:       $K3_HOST"
+    echo "token set:  $([ -n "${K3_API_KEY:-}" ] && echo yes || echo NO)"
+    _k3_status || true
+    echo "python:     $(python3 --version 2>&1)"
+    echo "hermes:     $(command -v hermes || echo NOT INSTALLED)"
+    if command -v hermes >/dev/null; then
+        echo "  providers.ollama-launch.models includes '$K3_MODEL_NAME': $(hermes config get providers.ollama-launch.models 2>/dev/null | grep -c -- "$K3_MODEL_NAME") times"
+    fi
+}
+
+_k3_config() {
+    # very small wrapper: kimi-k3-lean config [get NAME | set NAME VALUE | unset NAME]
+    local op="${1:-show}"; shift 2>/dev/null || true
+    case "$op" in
+        show)   echo "K3_HOME=$K3_HOME"; cat "$K3_CONF" 2>/dev/null || true ;;
+        get)    grep -E "^${1}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2- ;;
+        set)    local k="$1" v="$2"
+                grep -v "^${k}=" "$K3_CONF" 2>/dev/null > "$K3_CONF.tmp" || true
+                echo "${k}=${v}" >> "$K3_CONF.tmp"
+                mv "$K3_CONF.tmp" "$K3_CONF"
+                chmod 600 "$K3_CONF" ;;
+        unset)  sed -i.bak "/^${1}=/d" "$K3_CONF" 2>/dev/null || true ; rm -f "$K3_CONF.bak" ;;
+    esac
+}
+
+_k3_uninstall() {
+    _k3_stop
+    cat >&2 <<EOF
+This uninstalls ONLY the launcher and the server+token. The repo at
+$K3_HOME and any downloaded model weights are kept (delete with rm -rf).
+EOF
+    rm -f "$K3_BIN"  # symlink this script lives at
+    if command -v hermes >/dev/null; then
+        hermes config unset model.base_url model.api_key model.default 2>/dev/null || true
+        hermes config set providers.ollama-launch.models "$(hermes config get providers.ollama-launch.models 2>/dev/null | grep -v -- "$K3_MODEL_NAME" | python3 -c 'import re,sys; print(repr([l.strip()[2:] for l in sys.stdin if l.strip().startswith("- ")])))')" 2>/dev/null || true
+    fi
+    echo "uninstalled. to fully remove the repo:  rm -rf $K3_HOME"
+}
+
+_k3_install() {
+    # If this launcher is in ~/.local/bin, the install is complete.
+    # Otherwise it was run from the repo; tell the user how to install.
+    local bin_path="${BASH_SOURCE[0]}"
+    if [ "$bin_path" = "$HOME/.local/bin/kimi-k3-lean" ] || [ "$bin_path" = "$HOME/.local/bin/$(basename "$bin_path")" ]; then
+        echo "Already installed at $bin_path. Nothing to do."
+    else
+        cat <<EOF
+Not yet on PATH. To install the launcher system-wide:
+
+  mkdir -p ~/.local/bin
+  cp $bin_path ~/.local/bin/kimi-k3-lean
+  export PATH="\$HOME/.local/bin:\$PATH"
+
+Or use the bootstrap installer:
+
+  curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
+EOF
+    fi
+}
+
+_k3_help() {
+    sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+    echo ""
+    echo "Subcommands:"
+    echo "  serve [FLAGS]      start the server (flags go to serve/__main__.py)"
+    echo "  status             print running PID + URL"
+    echo "  stop               stop the running server"
+    echo "  models | list      curl /v1/models"
+    echo "  chat -m 'msg'      one-shot /v1/chat/completions"
+    echo "  fetch              download K3 weights (delegates to setup-and-serve.sh)"
+    echo "  doctor             print install state"
+    echo "  config get|set|unset NAME [VALUE]"
+    echo "  install            print install hints"
+    echo "  uninstall          stop server, remove launcher"
+    echo "  help               this"
+}
+
+case "$cmd" in
+    serve)    _k3_serve "$@" ;;
+    stop)     _k3_stop ;;
+    status)   _k3_status ;;
+    models|list) _k3_models ;;
+    chat)     _k3_chat "$@" ;;
+    fetch)    _k3_fetch ;;
+    doctor)   _k3_doctor ;;
+    config)   _k3_config "$@" ;;
+    install)  _k3_install ;;
+    uninstall) _k3_uninstall ;;
+    help|--help|-h) _k3_help ;;
+    *)        echo "unknown subcommand: $cmd"; _k3_help; exit 2 ;;
+esac
