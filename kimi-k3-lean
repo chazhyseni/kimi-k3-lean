@@ -614,43 +614,43 @@ EOF
 _k3_help() {
     sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
     echo ""
-    echo "Subcommands:"
-    echo "  serve [FLAGS]      start the server (flags go to serve/__main__.py)"
-    echo "  status             print running PID + URL"
+    echo "Daily-use:"
+    echo "----------"
+    echo "  start              start the OpenAI server on http://127.0.0.1:8080"
+    echo "  chat -m \"msg\"     one-shot /v1/chat/completions (alias: ask)"
     echo "  stop               stop the running server"
-    echo "  models | list      curl /v1/models"
-    echo "  chat -m 'msg'      one-shot /v1/chat/completions"
-    echo "  fetch              download K3 weights (delegates to setup-and-serve.sh)"
-    echo "  doctor             print install state"
-    echo "  config get|set|unset NAME [VALUE]"
+    echo "  doctor             print install state (token, port, model-on-disk)"
+
+
+    echo ""
+    echo "Advanced:"
+    echo "----------"
+    echo "  status             show running PID + URL"
+    echo "  models             curl /v1/models (one-shot)"
+    echo "  fetch              download K3 weights (resumable, ~4 hrs, 982 GB)"
+    echo "  update             pull HEAD, refresh this launcher"
+    echo "  uninstall          stop server, remove this launcher"
+    echo "  config get|set NAME [VALUE]"
     echo "  stack up [--webui] [--k3] [--clean] [--rebuild]"
-    echo "                       Bring up the full stack (Caddy+gateway+router+model+Open WebUI)."
-    echo "                       --clean: tear down prior stack state first (fixes stale image /"
-    echo "                                container / network errors)"
-    echo "                       --rebuild: rebuild images and exit (no up)"
-    echo "                       --no-build: skip image build step"
+    echo "                       LAN stack: Caddy + gateway + Open WebUI"
     echo "  stack down         docker compose down"
     echo "  stack status       docker compose ps"
-    echo "  stack logs [SVC]   tail compose logs"
-    echo "  install            print install hints"
-    echo "  update             git pull origin/main and refresh the installed launcher"
-    echo "  uninstall          stop server, remove launcher"
     echo "  help               this"
 }
 
 case "$cmd" in
-    serve)    _k3_serve "$@" ;;
-    stop)     _k3_stop ;;
-    status)   _k3_status ;;
-    models|list) _k3_models ;;
-    chat)     _k3_chat "$@" ;;
-    fetch)    _k3_fetch ;;
-    doctor)   _k3_doctor ;;
-    config)   _k3_config "$@" ;;
-    stack)    _k3_stack "$@" ;;
-    install)  _k3_install ;;
-    update)   _k3_update ;;
-    uninstall) _k3_uninstall ;;
+    serve|start)   _k3_serve "$@" ;;
+    stop)          _k3_stop ;;
+    status)        _k3_status ;;
+    models|list)   _k3_models ;;
+    chat|ask)      _k3_chat "$@" ;;
+    fetch)         _k3_fetch ;;
+    doctor)        _k3_doctor ;;
+    config)        _k3_config "$@" ;;
+    stack)         _k3_stack "$@" ;;
+    install)       _k3_install ;;
+    update)        _k3_update ;;
+    uninstall)     _k3_uninstall ;;
     help|--help|-h) _k3_help ;;
-    *)        echo "unknown subcommand: $cmd"; _k3_help; exit 2 ;;
+    *)             echo "unknown subcommand: $cmd (try: start / stop / chat / doctor)"; exit 2 ;;
 esac

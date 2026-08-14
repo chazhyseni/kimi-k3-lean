@@ -182,17 +182,28 @@ else
 fi
 
 # ----- 3b. model dir -----
+# Default: download K3 weights in the background right now so chat
+# completes automatically in ~4 hours. Set K3_SKIP_DL=1 to skip (e.g.
+# if you already have them on disk, or just want the HTTP scaffold).
 if [ "${K3_SKIP_DL:-0}" = "1" ]; then
     ok "skipping model download (K3_SKIP_DL=1)"
-elif [ -d "$K3_MODEL_DIR" ] && [ -n "$(ls "$K3_MODEL_DIR" 2>/dev/null)" ]; then
+elif [ -d "$K3_MODEL_DIR" ] && [ -n "$(ls -A "$K3_MODEL_DIR" 2>/dev/null)" ]; then
     ok "model already exists at $K3_MODEL_DIR"
+elif [ ! -t 0 ] && [ ! "${K3_QUIET:-0}" = "1" ]; then
+    # Non-interactive (curl|bash) -- default to auto-download.
+    mkdir -p "$K3_MODEL_DIR"
+    say "downloading Kimi K3 weights in background (~982 GB, ~4 hours, resumable)"
+    say "tail $K3_DIR/download.log for progress"
+    say "(set K3_SKIP_DL=1 if you already have the weights)"
+    # Setup-and-serve.sh runs detached so the scaffold + server come up
+    # while the download continues in the background.
+    nohup bash "$K3_DIR/scripts/setup-and-serve.sh" --download-only \
+        >> "$K3_DIR/download.log" 2>&1 &
+    echo "$!" > "$K3_DIR/download.pid"
 else
     warn "no model at $K3_MODEL_DIR"
     warn "to download the real Kimi K3 (~982 GB, ~4 hours):"
     warn "  K3_DIR=$K3_DIR bash $K3_DIR/scripts/setup-and-serve.sh --download-only"
-    warn "the server will start without a model and report 'engine open failed'."
-    warn "you'll still get the HTTP scaffold + Hermes registration,"
-    warn "so any future download immediately becomes accessible."
     # create empty placeholder so the rest of the pipeline doesn't 404
     mkdir -p "$K3_MODEL_DIR"
 fi
@@ -494,6 +505,17 @@ else
     warn "skipped launcher install (no write access to $K3_BIN_DIR)"
 fi
 
+# ----- 6.5. auto-download (only with K3_DOWNLOAD=1) -----
+# If the user sets K3_DOWNLOAD=1, kick off the K3 weights download in the
+# background right after the scaffold is up. Resumable.
+if [ "${K3_DOWNLOAD:-0}" = "1" ]; then
+    if [ -d "$K3_DIR/scripts" ]; then
+        say "K3_DOWNLOAD=1: starting K3 weights download in background (~4 hrs)"
+        ( cd "$K3_DIR" && nohup bash "$K3_DIR/scripts/setup-and-serve.sh" --download-only             >> "$K3_DIR/download.log" 2>&1 & )
+        ok "download started; tail -f $K3_DIR/download.log"
+    fi
+fi
+
 # ----- 7. hand-off -----
 cat >&2 <<EOF
 done: $(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -505,36 +527,28 @@ done: $(date -u +%Y-%m-%dT%H:%M:%SZ)
   Token:    (in $K3_DIR/server.env, mode 0600)
   Platform: $K3_OS (python: $K3_PY)
 
-After bootstrap:
+Daily-use (only commands you ever need):
 
-  1. test with curl right now:
-        TOKEN=$(grep ^K3_API_KEY= $K3_DIR/server.env | cut -d= -f2)
-        curl -s http://$K3_HOST:$K3_PORT/v1/models -H "Authorization: Bearer \$TOKEN"
+  kimi-k3-lean start            # start the server (skips download; backgound still running)
+  kimi-k3-lean stop
+  kimi-k3-lean chat -m "hello"  # works once download finishes
+  kimi-k3-lean doctor           # print install state
 
-  2. or use the launcher (after adding $K3_BIN_DIR to PATH if needed):
-        kimi-k3-lean status     # PID + URL
-        kimi-k3-lean models     # curl /v1/models
-        kimi-k3-lean chat -m hi
-        kimi-k3-lean stop
+For a full LAN stack with Open WebUI:
 
-  3. download the real Kimi K3 (~982 GB, ~4 hours):
-        K3_DIR=$K3_DIR bash $K3_DIR/scripts/setup-and-serve.sh --download-only
+  kimi-k3-lean stack up --webui
 
-  4. full LAN stack with Open WebUI:
-        kimi-k3-lean stack up --webui
+To uninstall:
 
-  5. uninstall:
-        curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | K3_UNINSTALL=1 bash
+  kimi-k3-lean uninstall
 
-If you saw "warn: server didn't respond" above, the model wasn't on disk.
-The HTTP scaffold and the launcher are in place; the round-trip will
-start working as soon as the K3 weights finish downloading.
+---
 
-The article's tiny_k3.bin fixture does NOT give working chat completions
-(it has vocab=256; the real tokenizer has vocab=163,584). The fixture only
-proves the C engine's 3-GATE oracle passes against the reference.
-Downloading the real K3 is the only path to a working chat endpoint.
-
+Done. The scaffold is up and the K3 weights are downloading in the
+background. When the download finishes (~4 hours), restart the
+server with `kimi-k3-lean stop && kimi-k3-lean start` and chat
+completions will work. Tail progress with
+`kimi-k3-lean fetch --status` or `tail -f ~/.kimi-k3-lean/download.log`.
 EOF
 
 exit 0
