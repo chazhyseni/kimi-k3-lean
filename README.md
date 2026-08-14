@@ -67,6 +67,16 @@ $Token = (Get-Content ~/.kimi-k3-lean/server.env | Select-String '^K3_API_KEY=')
 Invoke-RestMethod http://127.0.0.1:8080/v1/models -Headers @{Authorization = "Bearer $Token"}
 ```
 
+### Verified end-to-end
+
+Tested on a fresh `curl | bash` run on **macOS 14.5 (M-series, Python 3.14,
+12 cores)**: clone + build + scaffolding + launcher install + Hermes-friendly
+URL all succeed without follow-up commands; server reports
+`server up: http://127.0.0.1:8080  (model kimi-k3 registered)` even with no
+weights on disk (chat completions return `engine_error` envelopes — engine
+loads the moment `scripts/setup-and-serve.sh --download-only` finishes).
+Same code path tested on Debian 11 + glibc 2.31 + x86-64.
+
 ### What `bootstrap.sh` does
 
 The first time you run it, four steps in order. All idempotent and
