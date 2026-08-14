@@ -1,0 +1,73 @@
+# docker-compose.yml — bring up kimi-k3-lean with sensible defaults.
+#
+# Usage:
+#   docker compose up                    # foreground
+#   docker compose up -d                 # detached
+#   docker compose logs -f                # follow logs
+#   docker compose down                  # stop
+#
+# Prerequisites:
+#   - The model directory at /path/to/kimi-k3/checkpoint, OR
+#   - Set K3_MODEL_DIR in .env (copy .env.example)
+#
+# Cgroups:
+#   - Default cpuset: 0-7 (eight cores). Override with CPUSET in .env.
+#   - Default memory: 32 GB. Override with MEMORY in .env.
+
+name: kimi-k3-lean
+
+services:
+  # --------------------------------------------------------------- runtime
+  kimi-k3-lean:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kimi-k3-lean:latest
+    container_name: kimi-k3-lean
+    restart: unless-stopped
+
+    # Resource limits. These are honored on cgroup v2 hosts (recent
+    # Docker, containerd, podman). On macOS/Windows Docker Desktop the
+    # underlying VM may not propagate these, but they don't fail.
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 32G
+        reservations:
+          cpus: "4"
+          memory: 16G
+
+    # Bind the model directory as a read-only mount. Path is host-side;
+    # override with K3_MODEL_DIR in .env.
+    volumes:
+      - ${K3_MODEL_DIR:-/path/to/checkpoint}:/model:ro
+
+    # Network. The host can reach the server at 127.0.0.1:8080.
+    ports:
+      - "${K3_PORT:-8080}:8080"
+
+    # Environment. K3_PRESET picks the engine preset; K3_HOST/K3_PORT
+    # let the harness know how to reach the server.
+    environment:
+      K3_MODEL_DIR: /model
+      K3_PRESET: ${K3_PRESET:-server}
+      K3_HOST: 0.0.0.0
+      K3_PORT: "8080"
+      # Optional: API key for /v1/chat/completions auth.
+      # K3_API_KEY: ${K3_API_KEY:-}
+      # Optional: thread count for the engine.
+      # K3_THREADS: "8"
+
+    # Healthcheck: hit /v1/models; if 200, server is ready.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/k3", "--help"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+    # Default command: print --help so an unconfigured `docker compose up`
+    # is informative. Override with the CLI invocation in .env.
+    entrypoint: ["/usr/local/bin/k3"]
+    command: ["--help"]

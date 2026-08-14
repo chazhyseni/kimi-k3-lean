@@ -1,0 +1,58 @@
+# Dockerfile.convert — for converting HuggingFace checkpoints to native format.
+#
+# Larger image: includes PyTorch + transformers + safetensors.
+# Used once per model; runtime image does not need this.
+#
+# Build:    docker build -f Dockerfile.convert -t kimi-k3-lean:convert .
+# Run:      docker run --rm -v $(pwd)/out:/out -v $(pwd)/in:/in \
+#               kimi-k3-lean:convert /in/shard-00001-of-00096.safetensors /out
+
+FROM --platform=$BUILDPLATFORM python:3.11-slim-bookworm AS convert
+
+ARG TARGETPLATFORM
+
+# Toolchain for the C parts we still depend on (verify_continer.py etc.).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    ninja-build \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# PyTorch CPU. Pin to 2.5.x to match the article's tested wheel.
+# (2.6+ requires glibc 2.34, which is fine on Debian 12 but not older hosts.)
+RUN pip install --no-cache-dir \
+    torch==2.5.1+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir \
+    transformers \
+    safetensors \
+    numpy \
+    huggingface_hub \
+    tiktoken
+
+WORKDIR /src
+
+# We only need the tools/, scripts/, and the C engine for verification.
+COPY include/ /src/include/
+COPY src/ /src/src/
+COPY third_party/ /src/third_party/
+COPY tools/ /src/tools/
+COPY scripts/ /src/scripts/
+COPY tests/ /src/tests/
+COPY Makefile CMakeLists.txt /src/
+
+# Build the engine (we use libwaste-style verification, not libk3).
+RUN LDFLAGS="-lm -pthread" make -j"$(nproc)" libk3
+
+# Default: print help. Override with the convert command.
+WORKDIR /work
+ENTRYPOINT ["python3", "/src/tools/convert.py"]
+CMD ["--help"]
+
+LABEL org.opencontainers.image.title="kimi-k3-lean-convert" \
+      org.opencontainers.image.description="Convert Kimi K3 checkpoints to native format" \
+      org.opencontainers.image.source="https://github.com/sqliteai/kimi-k3-lean" \
+      org.opencontainers.image.licenses="Apache-2.0"

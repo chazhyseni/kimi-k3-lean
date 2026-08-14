@@ -1,0 +1,135 @@
+# build output
+build/
+bin/
+x86_64-*/
+aarch64-*/
+arm64-/
+compile_commands.json
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.lib
+
+# Model weights and derived data. Hundreds of gigabytes; never commit these.
+# The patterns are broad on purpose; test fixtures are re-included at the bottom.
+*.safetensors
+trunk.bin
+trunk.json
+k3model/
+k3trunk/
+*.gguf
+
+# Run artifacts. Anchored to the repository root so that a stray `k3_run.json` in the
+# working directory is ignored while an identically-named fixture is not.
+/*.log
+/k3_run.json
+/expert_trace.bin
+/expert_hist.json
+/st_index.json
+/st_values.json
+/out/
+/results/
+
+# credentials
+hf_token*
+*.pem
+*_key
+*_key.pub
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+
+# cmake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Makefile.cmake
+build/
+cmake-build-*/
+Testing/
+CPack*.cmake
+CMakeUserPresets.json
+*.cmake.user
+
+# Conan / vcpkg
+conanfile.lock
+conaninfo.txt
+conan_paths.json
+build*/generators/
+vcpkg_installed/
+
+# macOS-specific
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows-specific
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild[Ll]og.*
+*.[Pp]ublish.xml
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+[Tt]humbs.db
+[Tt]est[Rr]esult*/
+.vs/
+*.suo
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+ipch/
+
+# Rust (if we ever add rust bindings)
+target/
+Cargo.lock
+
+# Test artifacts
+core.*
+test-output/
+valgrind-out.*
+.cache/
+
+# IDE
+.cursor/
+.aider*
+
+# ----------------------------------------------------------------------------------
+# Test fixtures are PART OF THE REPOSITORY and must survive every rule above.
+#
+# `make test` is this project's correctness gate, and it deliberately runs without model
+# weights, but only if the fixtures are present in the clone. Without these re-includes
+# the rules above silently drop tests/fixtures/{cache,st}/ (synthetic .safetensors
+# shards), expert_trace.bin, and the recorded reference logs. A fresh clone would then
+# build cleanly and fail its own test suite, which is a bad first impression and a
+# confusing one to debug.
+!tests/fixtures/
+!tests/fixtures/**

@@ -1,0 +1,193 @@
+name: ci
+
+# CI for kimi-k3-lean. Runs on every push and PR.
+#
+# Matrix covers:
+#   - Linux x86_64 (Ubuntu 22.04 + 24.04)
+#   - macOS arm64 (M-series) + x86_64 (Intel)
+#   - Windows x86_64 (Visual Studio 2022 + MinGW)
+#
+# Build via Makefile on POSIX, CMake on Windows. Test the article's 3 GATEs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-flight runs on the same branch when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Make the engine logs easier to find in failures.
+  K3_LOG_LEVEL: 1
+
+jobs:
+  # -------------------------------------------------------------- build-and-test
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: gcc + clang, two Ubuntu LTS releases.
+          - os: ubuntu-22.04
+            compiler: gcc
+            build: make
+          - os: ubuntu-24.04
+            compiler: gcc
+            build: make
+          - os: ubuntu-24.04
+            compiler: clang
+            build: make
+          # macOS: Apple Silicon (the M-series is the target), plus Intel.
+          - os: macos-14
+            compiler: clang
+            build: make
+            arch: arm64
+          - os: macos-13
+            compiler: clang
+            build: make
+            arch: x86_64
+          # Windows: MSVC (default) and MinGW.
+          - os: windows-2022
+            compiler: msvc
+            build: cmake
+          - os: windows-2022
+            compiler: mingw
+            build: cmake
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python (needed for convert tooling + future OpenAI server)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential make \
+            libgomp1
+
+      - name: Install macOS deps
+        if: runner.os == 'macOS'
+        run: |
+          brew update || true
+          brew install llvm libomp 2>/dev/null || true
+
+      - name: Install MSVC
+        if: matrix.compiler == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install MinGW
+        if: matrix.compiler == 'mingw'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git base-devel mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      - name: Build (Make)
+        if: matrix.build == 'make'
+        run: |
+          export LDFLAGS="-lm -pthread"
+          make -j$(nproc) clean
+          make -j$(nproc)
+
+      - name: Build (CMake)
+        if: matrix.build == 'cmake'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: Test (3-GATE oracle)
+        run: |
+          if [ "${{ matrix.build }}" = "make" ]; then
+            export LDFLAGS="-lm -pthread"
+            make test
+          else
+            cd build
+            ctest --output-on-failure -C Release
+            cd ..
+          fi
+
+      - name: Smoke-test the CLI
+        run: |
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            ./build/bin/Release/k3.exe --help
+            ./build/bin/Release/k3.exe --version
+          elif [ "${{ matrix.build }}" = "cmake" ]; then
+            ./build/bin/k3 --help
+            ./build/bin/k3 --version
+          else
+            ./bin/k3 --help
+            ./bin/k3 --version
+          fi
+
+      - name: Verify libk3.so exports
+        if: matrix.os != 'windows-2022'
+        run: |
+          if [ "${{ matrix.build }}" = "cmake" ]; then
+            LIB=./build/lib/libk3.so
+          else
+            LIB=./bin/libk3.so
+          fi
+          echo "Public API symbols in $LIB:"
+          nm -D --defined-only "$LIB" 2>/dev/null | grep " T k3_" | sort
+
+          # All 14 expected symbols must be present.
+          for sym in k3_open k3_close k3_step k3_generate k3_save_state \
+                     k3_load_state k3_tokenize k3_detokenize k3_model_id \
+                     k3_n_layers k3_vocab_size k3_ctx_size k3_get_stats \
+                     k3_reset_stats; do
+            if ! nm -D --defined-only "$LIB" 2>/dev/null | grep -q " T $sym"; then
+              echo "FAIL: missing symbol $sym"
+              exit 1
+            fi
+          done
+          echo "All 14 public symbols present."
+
+      - name: Verify k3.dll exports (Windows)
+        if: matrix.os == 'windows-2022' && matrix.build == 'cmake'
+        run: |
+          LIB="./build/bin/Release/k3.dll"
+          # dumpbin /EXPORTS
+          "$VCINSTALLDIR/VC/Tools/MSVC/$VCTOOLSVER/bin/Hostx64/x64/dumpbin.exe" /EXPORTS "$LIB" 2>&1 | head -30 || true
+          echo "Public API symbols (PowerShell):"
+          $symbols = & dumpbin /EXPORTS $LIB | Select-String -Pattern 'k3_'
+          $symbols | ForEach-Object { $_.ToString() }
+
+      - name: Upload artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kimi-k3-lean-${{ matrix.os }}-${{ matrix.compiler }}
+          path: |
+            bin/k3
+            bin/libk3.so
+            build/bin/k3
+            build/lib/libk3.so
+            build/bin/Release/k3.exe
+            build/bin/Release/k3.dll
+            build/lib/Release/k3.dll
+          if-no-files-found: ignore

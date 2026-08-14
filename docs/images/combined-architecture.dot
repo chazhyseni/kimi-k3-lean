@@ -1,0 +1,180 @@
+// combined-architecture.dot — render with:
+//   dot -Tpng combined-architecture.dot -o combined-architecture.png
+//
+// LAYOUT (top → bottom):
+//   ROW 0 — title bar
+//   ROW 1 — DESIGN PRINCIPLES bar (4 numbered choices)
+//   ROW 2 — REQUEST FLOW: harness → OpenAI server → libk3.so
+//   ROW 3 — ENGINE FORWARD: tokenizer → embedding → MoE stack → lm_head → argmax → detok
+//   ROW 4 — STATE / CACHE: kda state, mla kv cache, expert LRU, trunk cache
+//   ROW 5 — MEMORY BOUNDARY banner
+//   ROW 6 — DISK: trunk, expert pool, embed
+//   ROW 7 — OFFLINE PREP: fetch → convert
+//   ROW 8 — legend
+//
+// COLORS:
+//   - Purple (#5d3fd3): engine internals (RAM-resident)
+//   - Light purple (#c8b8e8): offline prep
+//   - Orange (#ff9a3c): per-token memory boundary (experts streaming)
+//   - Green (#2e8b3d): design choices
+//   - Gray (#d0d0d0): NVMe / disk
+
+digraph combined_architecture {
+    graph [
+        rankdir=TB,
+        splines=ortho,
+        nodesep=0.18,
+        ranksep=0.40,
+        bgcolor="white",
+        fontname="Helvetica",
+        label=<<TABLE BORDER="0" CELLBORDER="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="22"><B>warp + kimi-k3-in-c — combined engine architecture</B></FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="13" COLOR="#666666">a 2.78-trillion-parameter model running as an OpenAI-compatible HTTP server</FONT></TD></TR></TABLE>>,
+        labelloc=t,
+        pad=0.4,
+    ];
+
+    node [
+        shape=box,
+        style="rounded,filled",
+        fontname="Helvetica",
+        fontsize=11,
+        margin=0.12,
+    ];
+
+    edge [color="#888888", penwidth=1.2, arrowsize=0.8];
+
+    // ============================================================
+    // ROW 1 — DESIGN PRINCIPLES
+    // ============================================================
+    {
+        rank=same;
+        p1 [label=<<FONT POINT-SIZE="20" COLOR="#2e8b3d"><B>①</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#2e8b3d"><B>disk-resident</B></FONT><BR/><FONT POINT-SIZE="9">1.45 TB experts never leave NVMe</FONT>>, fillcolor="#e8f5e8"];
+        p2 [label=<<FONT POINT-SIZE="20" COLOR="#2e8b3d"><B>②</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#2e8b3d"><B>CPU-only</B></FONT><BR/><FONT POINT-SIZE="9">no BLAS, no CUDA, no GPU</FONT>>, fillcolor="#e8f5e8"];
+        p3 [label=<<FONT POINT-SIZE="20" COLOR="#2e8b3d"><B>③</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#2e8b3d"><B>memory is a dial</B></FONT><BR/><FONT POINT-SIZE="9">8 GB → 224 GB, same answer</FONT>>, fillcolor="#e8f5e8"];
+        p4 [label=<<FONT POINT-SIZE="20" COLOR="#2e8b3d"><B>④</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#2e8b3d"><B>OpenAI server</B></FONT><BR/><FONT POINT-SIZE="9">any agent harness just works</FONT>>, fillcolor="#e8f5e8"];
+        p1 -> p2 -> p3 -> p4 [style=invis];
+    }
+
+    // ============================================================
+    // ROW 2 — REQUEST FLOW
+    // ============================================================
+    client      [label=<<FONT POINT-SIZE="13"><B>agent harness</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#666666">Hermes · Open WebUI · LM Studio</FONT><BR/><FONT POINT-SIZE="9" COLOR="#666666">Continue · Cursor · openai-py</FONT>>, fillcolor="#fff8e1"];
+    openai_srv  [label=<<FONT POINT-SIZE="13" COLOR="#5d3fd3"><B>OpenAI HTTP server</B></FONT><BR/><FONT POINT-SIZE="9">/v1/chat/completions · SSE streaming</FONT><BR/><FONT POINT-SIZE="9">auth · chatfmt · api · server.py</FONT><BR/><FONT POINT-SIZE="8" COLOR="#999999"><I>from warp's serve/</I></FONT>>, fillcolor="#e8e0f5"];
+    libk3       [label=<<FONT POINT-SIZE="13" COLOR="#5d3fd3"><B>libk3.so</B></FONT><BR/><FONT POINT-SIZE="9">k3_open · k3_step · k3_generate</FONT><BR/><FONT POINT-SIZE="9">k3_save_state · k3_load_state</FONT><BR/><FONT POINT-SIZE="8" COLOR="#999999"><I>162 KB · 14 public symbols</I></FONT>>, fillcolor="#e8e0f5"];
+    client -> openai_srv [label=<<FONT POINT-SIZE="9">POST /v1/chat/completions</FONT>>];
+    openai_srv -> libk3   [label=<<FONT POINT-SIZE="9">ctypes</FONT>>];
+
+    // ============================================================
+    // ROW 3 — ENGINE FORWARD (the per-token pipeline)
+    // ============================================================
+    {
+        rank=same;
+        tokenizer [label=<<FONT POINT-SIZE="12" COLOR="#5d3fd3"><B>tokenizer</B></FONT><BR/><FONT POINT-SIZE="9">tiktoken BPE</FONT>>, fillcolor="#e8e0f5"];
+        embedding [label=<<FONT POINT-SIZE="12" COLOR="#5d3fd3"><B>embedding</B></FONT><BR/><FONT POINT-SIZE="9">2.35 GB bf16</FONT>>, fillcolor="#e8e0f5"];
+        moe_stack [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2">
+                <TR><TD><FONT POINT-SIZE="12" COLOR="#ff9a3c"><B>93 decoder layers</B></FONT></TD></TR>
+                <TR><TD><FONT POINT-SIZE="9" COLOR="#444444">kda · mla · moe</FONT></TD></TR>
+                <TR><TD><FONT POINT-SIZE="8" COLOR="#666666">trunk streamed, experts LRU</FONT></TD></TR>
+            </TABLE>
+        >, fillcolor="#fff0d8"];
+        lm_head   [label=<<FONT POINT-SIZE="12" COLOR="#5d3fd3"><B>lm_head</B></FONT><BR/><FONT POINT-SIZE="9">2.35 GB bf16</FONT>>, fillcolor="#e8e0f5"];
+        argmax    [label=<<FONT POINT-SIZE="12" COLOR="#5d3fd3"><B>argmax</B></FONT><BR/><FONT POINT-SIZE="9">greedy decode</FONT>>, fillcolor="#e8e0f5"];
+        detok     [label=<<FONT POINT-SIZE="12" COLOR="#5d3fd3"><B>detokenizer</B></FONT><BR/><FONT POINT-SIZE="9">BPE bytes</FONT>>, fillcolor="#e8e0f5"];
+        tokenizer -> embedding -> moe_stack -> lm_head -> argmax -> detok [style=invis];
+    }
+    libk3 -> tokenizer;
+    detok -> openai_srv [label=<<FONT POINT-SIZE="9">SSE chunks</FONT>>, constraint=false];
+
+    // ============================================================
+    // ROW 4 — STATE / CACHE (RAM-resident per-token state)
+    // ============================================================
+    {
+        rank=same;
+        kda_st     [label=<<FONT POINT-SIZE="11" COLOR="#5d3fd3"><B>kda state</B></FONT><BR/><FONT POINT-SIZE="9">recurrent + shortconv</FONT>>, fillcolor="#e8e0f5"];
+        mla_kv     [label=<<FONT POINT-SIZE="11" COLOR="#5d3fd3"><B>mla kv cache</B></FONT><BR/><FONT POINT-SIZE="9">24 MLA layers</FONT>>, fillcolor="#e8e0f5"];
+        expert_lru [label=<<FONT POINT-SIZE="11" COLOR="#ff9a3c"><B>expert LRU</B></FONT><BR/><FONT POINT-SIZE="9">routed experts in RAM</FONT>>, fillcolor="#fff0d8"];
+        trunk_lru  [label=<<FONT POINT-SIZE="11" COLOR="#5d3fd3"><B>trunk cache</B></FONT><BR/><FONT POINT-SIZE="9">pinned first 90 layers</FONT>>, fillcolor="#e8e0f5"];
+        kda_st -> mla_kv -> expert_lru -> trunk_lru [style=invis];
+    }
+
+    // Cache → MoE stack
+    expert_lru -> moe_stack [label=<<FONT POINT-SIZE="9">stream</FONT>>, style=dashed, color="#ff9a3c"];
+    trunk_lru  -> moe_stack [label=<<FONT POINT-SIZE="9">layers 0–90</FONT>>, style=dashed, color="#5d3fd3"];
+
+    // ============================================================
+    // ROW 5 — MEMORY BOUNDARY banner
+    // ============================================================
+    mem_b [label=<
+        <TABLE BORDER="0" CELLBORDER="0">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="13"><B>━━━━━ MEMORY BOUNDARY ━━━━━  RAM ↕ NVMe  ━━━━━ MEMORY BOUNDARY ━━━━━</B></FONT></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10" COLOR="#666666">per-token crossing when cache &lt; total weights — the disk stream is the architecture</FONT></TD></TR>
+        </TABLE>
+    >, shape=plaintext, margin=0.20];
+
+    // ============================================================
+    // ROW 6 — DISK (NVMe)
+    // ============================================================
+    {
+        rank=same;
+        trunk_disk  [label=<<FONT POINT-SIZE="11"><B>trunk</B></FONT><BR/><FONT POINT-SIZE="9">108.81 GB bf16</FONT><BR/><FONT POINT-SIZE="9">93 layers, packed</FONT>>, fillcolor="#e8e8e8"];
+        expert_pool [label=<<FONT POINT-SIZE="11"><B>expert pool</B></FONT><BR/><FONT POINT-SIZE="9">1.45 TB MXFP4</FONT><BR/><FONT POINT-SIZE="9">896 per layer × 92</FONT><BR/><FONT POINT-SIZE="9">82,432 experts</FONT>>, fillcolor="#e8e8e8"];
+        embed_disk  [label=<<FONT POINT-SIZE="11"><B>embed + lm_head</B></FONT><BR/><FONT POINT-SIZE="9">4.70 GB bf16</FONT><BR/><FONT POINT-SIZE="9">always resident</FONT>>, fillcolor="#e8e8e8"];
+        trunk_disk -> expert_pool -> embed_disk [style=invis];
+    }
+
+    // Cache → disk
+    trunk_lru  -> trunk_disk  [style=dashed, color="#888888"];
+    expert_lru -> expert_pool [style=dashed, color="#888888"];
+
+    // ============================================================
+    // ROW 7 — OFFLINE PREP
+    // ============================================================
+    {
+        rank=same;
+        fetch   [label=<<FONT POINT-SIZE="11" COLOR="#5d3fd3"><B>fetch</B></FONT><BR/><FONT POINT-SIZE="9">huggingface CLI</FONT><BR/><FONT POINT-SIZE="9">96 shards · 1.56 TB</FONT><BR/><FONT POINT-SIZE="8" COLOR="#999999"><I>tools/fetch_weights.sh</I></FONT>>, fillcolor="#c8b8e8"];
+        convert [label=<<FONT POINT-SIZE="11" COLOR="#5d3fd3"><B>convert</B></FONT><BR/><FONT POINT-SIZE="9">pytorch reference → native</FONT><BR/><FONT POINT-SIZE="9">bf16 trunk · MXFP4 experts</FONT><BR/><FONT POINT-SIZE="8" COLOR="#999999"><I>tools/convert.py</I></FONT>>, fillcolor="#c8b8e8"];
+        fetch -> convert [style=invis];
+    }
+
+    fetch -> trunk_disk  [style=dashed, color="#888888"];
+    fetch -> expert_pool [style=dashed, color="#888888"];
+    convert -> trunk_disk  [style=dashed, color="#888888"];
+    convert -> expert_pool [style=dashed, color="#888888"];
+
+    // ============================================================
+    // ROW 8 — legend
+    // ============================================================
+    legend [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="6">
+            <TR>
+                <TD><FONT POINT-SIZE="10" COLOR="#5d3fd3">■ purple: engine internals (RAM-resident)</FONT></TD>
+                <TD><FONT POINT-SIZE="10" COLOR="#ff9a3c">■ orange: per-token memory boundary</FONT></TD>
+                <TD><FONT POINT-SIZE="10" COLOR="#2e8b3d">■ green: design choices</FONT></TD>
+                <TD><FONT POINT-SIZE="10" COLOR="#888888">■ gray: NVMe / disk</FONT></TD>
+                <TD><FONT POINT-SIZE="10" COLOR="#c8b8e8">■ light purple: offline prep</FONT></TD>
+                <TD><FONT POINT-SIZE="10" COLOR="#ff9a3c">━━ orange dashed: per-token stream</FONT></TD>
+                <TD><FONT POINT-SIZE="10" COLOR="#5d3fd3">━━ purple dashed: cached weights</FONT></TD>
+            </TR>
+        </TABLE>
+    >, shape=plaintext];
+
+    // ============================================================
+    // Ranking constraints (force vertical alignment)
+    // ============================================================
+    // Force "agent harness" to be on the left of row 2
+    // Force engine forward row to be below row 2
+    {rank=same; client; openai_srv; libk3;}
+    {rank=same; tokenizer; embedding; moe_stack; lm_head; argmax; detok;}
+    {rank=same; kda_st; mla_kv; expert_lru; trunk_lru;}
+    {rank=same; trunk_disk; expert_pool; embed_disk;}
+    {rank=same; fetch; convert;}
+
+    // Vertical flow: principle → flow → forward → cache → boundary → disk → prep → legend
+    p1 -> client        [style=invis, weight=100];
+    client -> tokenizer [style=invis, weight=100];
+    tokenizer -> kda_st [style=invis, weight=100];
+    kda_st -> mem_b     [style=invis, weight=100];
+    mem_b -> trunk_disk  [style=invis, weight=100];
+    trunk_disk -> fetch  [style=invis, weight=100];
+    fetch -> legend      [style=invis, weight=100];
+}
