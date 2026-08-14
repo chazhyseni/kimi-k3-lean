@@ -45,8 +45,56 @@ EOF
     exit 1
 fi
 
+# Pre-flight: a broken `hf` (e.g. huggingface_hub from system pip with a
+# filelock that doesn't accept mode= kwarg) will report success on `hf --help`
+# but crash with 'TypeError: __init__() got an unexpected keyword argument
+# "mode"' the moment it hits a real file. Detect that quickly and provide
+# a fix: install hf into our own venv at ~/.local/share/kimi-k3-lean/hf-venv
+# (or ~/.venvs/hf if no project-local venv is writable), then PATH-prepend
+# that venv so this and subsequent calls use a known-good install.
+ensure_hf() {
+    # 1. Path-local venv under the repo dir (preferred when writable).
+    if [ -z "${HF_VENV:-}" ]; then
+        for candidate in "$K3_DIR/.hf-venv" "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean/hf-venv" "$HOME/.venvs/hf"; do
+            if [ -x "$candidate/bin/hf" ]; then
+                HF_VENV="$candidate"
+                break
+            fi
+        done
+    fi
+    if [ -z "${HF_VENV:-}" ]; then
+        HF_VENV="$HOME/.local/share/kimi-k3-lean/hf-venv"
+        if [ ! -x "$HF_VENV/bin/hf" ]; then
+            mkdir -p "$(dirname "$HF_VENV")"
+            if command -v python3 >/dev/null 2>&1; then
+                python3 -m venv "$HF_VENV" 2>/dev/null || true
+            fi
+            if [ ! -x "$HF_VENV/bin/pip" ] && command -v uv >/dev/null 2>&1; then
+                # Fall back to uv (creates the venv and installs in one go).
+                uv venv "$HF_VENV" --python python3 2>/dev/null || true
+            fi
+            if [ -x "$HF_VENV/bin/pip" ]; then
+                # Pin filelock to a version that supports mode= kwarg if needed,
+                # and pin huggingface_hub so we don't get a too-new version that
+                # abandoned it. >=1.0,<1.2 covers hf CLI rename and still works
+                # with pip-system filelock 3.x.
+                "$HF_VENV/bin/pip" install --quiet "filelock>=3.12" "huggingface_hub>=1.0,<1.2" || true
+            fi
+        fi
+    fi
+    if [ -x "$HF_VENV/bin/hf" ]; then
+        # Prepend the venv to PATH so all subsequent hf calls use it.
+        export PATH="$HF_VENV/bin:$PATH"
+    fi
+}
+ensure_hf
+
 # An older installation can provide `hf` without `hf cache verify`, which is what turns
 # the size check below into a real integrity check.
+hf --help >/dev/null 2>&1 || {
+    echo "this hf CLI doesn't respond; install huggingface_hub and re-run." >&2
+    exit 1
+}
 hf cache verify --help >/dev/null 2>&1 || {
     echo "this hf CLI has no 'cache verify'; upgrade huggingface_hub and re-run." >&2
     exit 1
