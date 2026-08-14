@@ -135,19 +135,48 @@ Windows: `.\scripts\setup-and-serve.ps1` with the same flags.
 
 ## Architecture
 
-The combined engine:
+The thing kimi-k3-lean adds to the article's engine is a single seam:
+`libk3.so` exposes the engine's C API to a Python OpenAI server via ctypes.
+Everything else is the article's engine, untouched.
 
-![combined engine architecture](docs/images/combined-architecture.png)
+```mermaid
+flowchart TB
+    client["any OpenAI-compat client<br/>(Hermes, Open WebUI, LM Studio,<br/>Claude Code, aider, Pi, OpenCode, raw curl)"]
 
-Rendered from `docs/images/combined-architecture.dot` (Graphviz). Every
-numeric claim in the diagram is sourced from `include/k3/k3.h` and
-`docs/PERFORMANCE.md` — the article's authoritative data. Re-render
-with `dot -Tpng docs/images/combined-architecture.dot -o docs/images/combined-architecture.png`.
+    server["<b>serve/server.py</b><br/>stdlib http.server<br/>+ ThreadingHTTPServer<br/>SSE streaming, bearer auth, 16 MB cap"]
 
-The top four rows are the **engine** (article's code, untouched). The
-**combined** piece is the seam: `libk3.so` exposes the engine's 14
-public C functions to a Python OpenAI server via ctypes, so any
-harness that speaks the OpenAI Chat Completions API can talk to it.
+    libk3["<b>libk3.so</b>  (162 KB)<br/>14 public C funcs<br/>k3_open / k3_step / k3_generate<br/>k3_save_state / k3_load_state<br/>k3_tokenize / k3_detokenize<br/>k3_get_stats / k3_reset_stats<br/>k3_model_id / k3_n_layers<br/>k3_vocab_size / k3_ctx_size<br/>k3_close"]
+
+    engine["<b>kimi-k3-in-c engine</b><br/>(FareedKhan-dev/kimi-k3-in-c)<br/>unchanged C source<br/>see article for full architecture"]
+
+    client -- "POST /v1/chat/completions" --> server
+    server -- "ctypes" --> libk3
+    libk3 -- "C ABI" --> engine
+
+    click engine "https://github.com/FareedKhan-dev/kimi-k3-in-c" "view the engine on GitHub"
+```
+
+The engine is the article's work — see its
+[architecture diagram](https://raw.githubusercontent.com/FareedKhan-dev/kimi-k3-in-c/main/docs/images/main_architecture.png)
+for the per-token forward step, the in-RAM state, the disk layout, and
+the O_DIRECT measurement methodology.
+
+What `kimi-k3-lean` ships, in addition to the engine:
+
+| New thing | What it is | Where it lives |
+|---|---|---|
+| `libk3.so` | 162 KB shared library exposing the engine's public C API | `src/lib/k3_api.c`, `src/lib/k3_engine.c` |
+| `serve/server.py` | OpenAI Chat Completions HTTP server, stdlib-only | `serve/server.py` |
+| `serve/engine.py` | ctypes wrapper, maps the 14 C functions to a Python `Engine` class | `serve/engine.py` |
+| `bootstrap.sh` / `bootstrap.ps1` | One-command install from anywhere | `bootstrap.sh`, `bootstrap.ps1` |
+| `scripts/setup-and-serve.sh` | Build + download + convert + serve, stepwise | `scripts/setup-and-serve.sh` |
+| `tools/convert.py` | HuggingFace safetensors → native format, no PyTorch needed | `tools/convert.py` |
+| `deploy/` | LAN deployment stack (Caddy + gateway + router + workspace) | `deploy/` |
+| `packaging/` | Homebrew / MSVC / RPM recipes | `packaging/` |
+
+Engine internals, in detail: see `ENGINE.md`'s source material in
+`include/k3/k3.h`, `src/core/k3_ops.c`, `src/cache/k3_cache.c`,
+and `docs/PERFORMANCE.md` (the article's measured data).
 
 ### Per-token forward step
 
