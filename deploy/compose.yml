@@ -31,7 +31,7 @@ services:
     networks:
       - k3l
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -55,7 +55,7 @@ services:
     networks:
       - k3l
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -78,7 +78,7 @@ services:
     networks:
       - k3l
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -89,10 +89,10 @@ services:
     container_name: k3l-caddy
     restart: unless-stopped
     ports:
-      # Only 80 and 443 are exposed to the LAN. Everything else stays
-      # inside the docker network.
-      - "80:80"
-      - "443:443"
+      # Only the HTTP and HTTPS ports are exposed to the LAN. Override
+      # with HTTP_PORT / HTTPS_PORT env vars if 80/443 are taken.
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     environment:
       SERVER_NAME: ${SERVER_NAME:-localhost}
       TLS_MODE: ${TLS_MODE:-internal}
@@ -113,7 +113,9 @@ services:
   # ---------------------------------------------------------------------
   k3:
     profiles: ["with-k3"]
-    build: ./model
+    build:
+      context: ..
+      dockerfile: deploy/model/Dockerfile
     container_name: k3l-model-k3
     restart: unless-stopped
     environment:

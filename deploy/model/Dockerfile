@@ -39,9 +39,16 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/health || exit 1
 
 # The server reads K3_API_KEY from env (set by compose).
-CMD ["python3", "-u", "/opt/kimi-k3-lean/serve/__main__.py", \
-     "/data", \
-     "--host", "0.0.0.0", "--port", "8080"]
+# Wrapper script: sets LD_LIBRARY_PATH and execs the server so
+# ctypes.CDLL picks up libk3.so. Some Python builds don`t honor
+# ENV LD_LIBRARY_PATH set in Dockerfile when launching CMD.
+RUN { \
+    echo '#!/bin/sh'; \
+    echo 'export LD_LIBRARY_PATH=/opt/kimi-k3-lean/bin:${LD_LIBRARY_PATH}'; \
+    echo 'exec python3 -u /opt/kimi-k3-lean/serve/__main__.py /data --host 0.0.0.0 --port 8080 "$@"'; \
+} > /opt/kimi-k3-lean/entrypoint.sh && chmod +x /opt/kimi-k3-lean/entrypoint.sh
+
+CMD ["/opt/kimi-k3-lean/entrypoint.sh"]
 
 LABEL org.opencontainers.image.title="kimi-k3-lean-server" \
       org.opencontainers.image.source="https://github.com/chazhyseni/kimi-k3-lean" \

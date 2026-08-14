@@ -64,6 +64,10 @@ _LIB_PATHS = [
     "/usr/lib/libk3.so",
     # User installs.
     os.path.expanduser("~/.local/lib/libk3.so"),
+    # Docker / system-packaged installs (deploy/model/Dockerfile puts it here).
+    "/opt/kimi-k3-lean/bin/libk3.so",
+    "/opt/kimi-k3-lean/bin/libk3.dylib",
+    "/opt/kimi-k3-lean/bin/k3.dll",
     # macOS install names (.dylib).
     "bin/libk3.dylib",
     "/usr/local/lib/libk3.dylib",

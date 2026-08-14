@@ -18,8 +18,38 @@ LAN clients (browser / agent CLI / scripts)
 This is the kimi-k3-lean analogue of /mnt/scratch/private-llm/ in the
 llm-server deployment. Same architecture, smaller scope, no GPU, no
 vLLM, no LiteLLM. The router replaces LiteLLM (LiteLLM is for
-translating OpenAI ↔ Anthropic ↔ etc.; we don't need that). The
+translating OpenAI ↔ Anthropic ↔ etc.; we don`t need that). The
 gateway has the same auth/size-limit/streaming pattern.
+
+## One-command bring-up
+
+After `bootstrap.sh` has installed the `kimi-k3-lean` launcher:
+
+```bash
+# bare server (Caddy + gateway + model, no chat UI)
+kimi-k3-lean stack up
+
+# full stack including Open WebUI for browser chats
+kimi-k3-lean stack up --webui
+
+# tear down
+kimi-k3-lean stack down
+kimi-k3-lean stack status
+kimi-k3-lean stack logs gateway
+```
+
+This is a thin wrapper around `docker compose -f deploy/compose.yml`.
+On a fresh install it copies `deploy/.env.example` to `.env` for you;
+edit that file before production to set INTERNAL_API_KEY, SERVER_NAME,
+and WEBUI_ADMIN_PASSWORD.
+
+What you get:
+
+- `http://localhost/v1/models`     — Caddy-fronted OpenAI endpoint
+- `http://localhost/llm/v1/...`    — same, with `/llm` prefix stripped
+- `http://localhost/workspace/...` — file browser
+- `http://localhost/client/...`    — laptop installer (`curl | bash`)
+- `http://localhost/`              — Open WebUI chat (with `--webui`)
 
 ## Bring-up
 

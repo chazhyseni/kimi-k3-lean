@@ -313,27 +313,106 @@ print(json.dumps(items))
 }
 hermes_configure
 
+# ----- 6b. install the launcher to ~/.local/bin/ so the user can run
+# `kimi-k3-lean serve` from any directory afterwards. Idempotent:
+# a symlink at the target is replaced; otherwise it's a fresh copy.
+K3_BIN_DIR="$HOME/.local/bin"
+K3_BIN="$K3_BIN_DIR/kimi-k3-lean"
+mkdir -p "$K3_BIN_DIR" 2>/dev/null || true
+if [ -d "$K3_BIN_DIR" ] && [ -w "$K3_BIN_DIR" ]; then
+    rm -f "$K3_BIN"
+    cp "$K3_DIR/kimi-k3-lean" "$K3_BIN" 2>/dev/null &&         chmod +x "$K3_BIN" &&         ok "launcher installed: $K3_BIN" ||         warn "could not install launcher to $K3_BIN (run with --user or fix perms)"
+    case ":$PATH:" in
+        *":$K3_BIN_DIR:"*) ok "PATH already includes $K3_BIN_DIR" ;;
+        *) warn "$K3_BIN_DIR is not on PATH; add  export PATH=$K3_BIN_DIR:\$PATH  to your shell rc";;
+    esac
+else
+    warn "skipped launcher install (no write access to $K3_BIN_DIR)"
+fi
+
 # ----- 7. hand-off -----
 cat >&2 <<EOF
-
-\033[1;36m==> done\033[0m
+NewShell "[1;36mIn another terminal (or after 'export PATH=$K3_BIN_DIR:\$PATH'):[0m"    "  kimi-k3-lean status     # PID + URL"
+NewShell "  kimi-k3-lean models     # curl /v1/models"
+NewShell "  kimi-k3-lean chat -m 'hi'"
+NewShell "  kimi-k3-lean stop"
+NewShell ""
+NewShell "Or test directly:"
+NewShell "  curl -s http://127.0.0.1:$K3_PORT/v1/models -H 'Authorization: Bearer ...'"
+NewShell ""
+NewShell "[1;36m==> done[0m"
 
 Server:      http://$K3_HOST:$K3_PORT
 API key:     (in $K3_DIR/server.env, mode 0600)
 Model:       $K3_MODEL_NAME   (registered with Hermes as default)
-Test it:     see README § "Test it" for five real curl demos
-Stop:        kill \$(cat $K3_DIR/server.pid)
+Launcher:    $K3_BIN
+Test it:     see README section "Test it" for five real curl demos
+Stop:        kill $(cat $K3_DIR/server.pid)
 Tail log:    tail -f $K3_DIR/server.log
 Download K3: K3_DIR=$K3_DIR bash $K3_DIR/scripts/setup-and-serve.sh --download-only
 Remove:      curl ... | K3_UNINSTALL=1 bash
 
-If you saw \`warn: server didn't respond\` above, the model wasn't on disk.
-The HTTP scaffold and Hermes registration are in place; the round-trip
-will start working as soon as the K3 weights finish downloading.
+# ----- 7. install the launcher to ~/.local/bin/ -----
+# After bootstrap the user should never have to think about PATH,
+# LD_LIBRARY_PATH, or which python to call. Drop the `kimi-k3-lean`
+# launcher into ~/.local/bin/ (idempotent; symlink or copy replaces).
+K3_BIN_DIR="$HOME/.local/bin"
+K3_BIN="$K3_BIN_DIR/kimi-k3-lean"
+mkdir -p "$K3_BIN_DIR" 2>/dev/null || true
+if [ -d "$K3_BIN_DIR" ] && [ -w "$K3_BIN_DIR" ]; then
+    rm -f "$K3_BIN"
+    if cp "$K3_DIR/kimi-k3-lean" "$K3_BIN" 2>/dev/null; then
+        chmod +x "$K3_BIN"
+        ok "launcher installed: $K3_BIN"
+        case ":$PATH:" in
+            *":$K3_BIN_DIR:"*) ok "PATH already includes $K3_BIN_DIR" ;;
+            *) warn "$K3_BIN_DIR is not on PATH; add this to your shell rc:"
+               warn "    export PATH=$K3_BIN_DIR:\$PATH" ;;
+        esac
+    else
+        warn "could not install launcher to $K3_BIN (perms?)"
+    fi
+else
+    warn "skipped launcher install (no write access to $K3_BIN_DIR)"
+fi
 
-The article's \`tiny_k3.bin\` fixture does NOT give working chat
-completions — it's only used by the C engine's 3-GATE oracle tests.
-Downloading the real K3 is the only path to a working model server.
+# ----- 8. hand-off -----
+cat >&2 <<EOF
+done: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  Server:   http://$K3_HOST:$K3_PORT
+  Launcher: $K3_BIN
+  Model:    $K3_MODEL_NAME
+  Log:      $K3_DIR/server.log
+  Token:    (in $K3_DIR/server.env, mode 0600)
+
+After bootstrap:
+
+  1. test with curl right now:
+        TOKEN=$(grep ^K3_API_KEY= $K3_DIR/server.env | cut -d= -f2)
+        curl -s http://$K3_HOST:$K3_PORT/v1/models -H "Authorization: Bearer $TOKEN"
+
+  2. or use the launcher (after adding $K3_BIN_DIR to PATH if needed):
+        kimi-k3-lean status     # PID + URL
+        kimi-k3-lean models     # curl /v1/models
+        kimi-k3-lean chat -m hi
+        kimi-k3-lean stop
+
+  3. download the real Kimi K3 (~982 GB, ~4 hours):
+        K3_DIR=$K3_DIR bash $K3_DIR/scripts/setup-and-serve.sh --download-only
+
+  4. uninstall:
+        curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | K3_UNINSTALL=1 bash
+
+If you saw "warn: server didn`''t respond" above, the model wasn`''t on disk.
+The HTTP scaffold and the launcher are in place; the round-trip will
+start working as soon as the K3 weights finish downloading.
+
+The article`''s tiny_k3.bin fixture does NOT give working chat completions
+(it has vocab=256; the real tokenizer has vocab=163,584). The fixture only
+proves the C engine`''s 3-GATE oracle passes against the reference.
+Downloading the real K3 is the only path to a working chat endpoint.
 
 EOF
+
 exit 0

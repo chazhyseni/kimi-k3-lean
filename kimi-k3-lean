@@ -86,36 +86,43 @@ K3_CONF="$K3_HOME/server.env"
 [ -f "$K3_CONF" ] || true  # exists check is harmless
 __env_set() { [ -n "${!1:-}" ]; }
 __load_if_unset() {
+    # NOTE: do NOT use `set -e` semantics in here. `[ -n "" ]` returns 1,
+    # which would abort the script. Use guard-style tests instead.
     local var="$1" def="$2"
-    if [ -z "${!var:-}" ] && [ -f "$K3_CONF" ]; then
-        # match ^VAR= at start of line, take value
-        local v
-        v=$(grep -E "^${var}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2-)
-        if [ -n "$v" ]; then
-            printf -v "$var" '%s' "$v"
-            export "$var"
-        fi
+    local cur="${!var:-}"
+    local from_file=""
+    if [ -z "$cur" ] && [ -f "$K3_CONF" ]; then
+        from_file=$(grep -E "^${var}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2- || true)
     fi
-    : "${!var:=$def}"
+    if [ -n "$from_file" ]; then
+        printf -v "$var" '%s' "$from_file"
+        export "$var"
+    elif [ -z "$cur" ]; then
+        printf -v "$var" '%s' "$def"
+        export "$var"
+    fi
 }
 __load_if_unset K3_PORT 8080
 __load_if_unset K3_HOST 127.0.0.1
 __load_if_unset K3_API_KEY ""
-__load_if_unset K3_MODEL "${K3_MODEL_DIR:-}"
+__load_if_unset K3_MODEL_DIR ""
 __load_if_unset K3_MODEL_NAME kimi-k3
+# K3_MODEL is just an alias for K3_MODEL_DIR; if neither is set, neither
+# can we serve anything.
+: "${K3_MODEL:=$K3_MODEL_DIR}"
 
 # ----- subcommands -----
 cmd="${1:-help}"
 shift 2>/dev/null || true
 
 _k3_status() {
+    local pid=""
     if [ -f "$K3_HOME/server.pid" ]; then
-        local pid
-        pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || echo "")
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            echo "kimi-k3-lean running: PID $pid  http://$K3_HOST:$K3_PORT  $K3_HOME/server.log"
-            return 0
-        fi
+        pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || true)
+    fi
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "kimi-k3-lean running: PID $pid  http://$K3_HOST:$K3_PORT  $K3_HOME/server.log"
+        return 0
     fi
     echo "kimi-k3-lean: no server running on http://$K3_HOST:$K3_PORT"
     return 1
@@ -300,6 +307,55 @@ EOF
     echo "uninstalled. to fully remove the repo:  rm -rf $K3_HOME"
 }
 
+_k3_stack() {
+    # subcommand: stack <up|down|status|logs> [FLAGS]
+    local sub="${1:-status}"; shift 2>/dev/null || true
+    local repo="$K3_HOME"
+    local deploy_dir="$repo/deploy"
+    if [ ! -d "$deploy_dir" ]; then
+        echo "no deploy/ directory at $deploy_dir"
+        return 1
+    fi
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "docker not installed; install Docker Desktop or Docker Engine first"
+        return 1
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        echo "docker compose plugin missing; install compose v2 (apt: docker-compose-plugin)"
+        return 1
+    fi
+    local compose=(docker compose -f "$deploy_dir/compose.yml")
+    case "$sub" in
+        up)
+            local profiles=()
+            # parse flags: --webui, --lan (sets tls=internal), --public (no tls=internal)
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --webui)   profiles+=(--profile with-webui); shift ;;
+                    --k3)      profiles+=(--profile with-k3); shift ;;
+                    --lan)     profiles+=(--profile lan); shift ;;
+                    *) echo "unknown flag: $1"; return 2 ;;
+                esac
+            done
+            # create .env from example if missing
+            if [ ! -f "$deploy_dir/.env" ] && [ -f "$deploy_dir/.env.example" ]; then
+                cp "$deploy_dir/.env.example" "$deploy_dir/.env"
+                echo "created $deploy_dir/.env from example (edit before production!)"
+            fi
+            "${compose[@]}" "${profiles[@]}" up -d --build "$@"
+            echo ""
+            echo "stack up. Try:"
+            echo "  kimi-k3-lean stack status"
+            echo "  curl http://localhost/v1/models -H \"Authorization: Bearer \$(grep ^INTERNAL_API_KEY= $deploy_dir/.env | cut -d= -f2)\""
+            echo "  open http://localhost/  (only with --webui)"
+            ;;
+        down)  "${compose[@]}" down "$@" ;;
+        status) "${compose[@]}" ps ;;
+        logs)  "${compose[@]}" logs -f "$@" ;;
+        *) echo "unknown stack sub: $sub (try up/down/status/logs)"; return 2 ;;
+    esac
+}
+
 _k3_install() {
     # If this launcher is in ~/.local/bin, the install is complete.
     # Otherwise it was run from the repo; tell the user how to install.
@@ -333,6 +389,10 @@ _k3_help() {
     echo "  fetch              download K3 weights (delegates to setup-and-serve.sh)"
     echo "  doctor             print install state"
     echo "  config get|set|unset NAME [VALUE]"
+    echo "  stack up [--webui] docker compose up the full stack (Caddy+gateway+router+model+Open WebUI)"
+    echo "  stack down         docker compose down"
+    echo "  stack status       docker compose ps"
+    echo "  stack logs [SVC]   tail compose logs"
     echo "  install            print install hints"
     echo "  uninstall          stop server, remove launcher"
     echo "  help               this"
@@ -347,6 +407,7 @@ case "$cmd" in
     fetch)    _k3_fetch ;;
     doctor)   _k3_doctor ;;
     config)   _k3_config "$@" ;;
+    stack)    _k3_stack "$@" ;;
     install)  _k3_install ;;
     uninstall) _k3_uninstall ;;
     help|--help|-h) _k3_help ;;

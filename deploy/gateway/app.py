@@ -96,7 +96,18 @@ async def proxy(path: str, request: Request,
             detail=f"request body may not exceed {MAX_REQUEST_BYTES} bytes",
         )
 
-    upstream_url = f"{UPSTREAM_BASE_URL}/{path}"
+    # UPSTREAM_BASE_URL ends in /v1 (router exposes /v1/models etc),
+    # but the gateway receives /v1/* from Caddy with the /v1 already
+    # in the path. Strip one leading /v1 before forwarding so the
+    # upstream URL is well-formed.
+    if path.startswith("v1/") or path == "v1":
+        forward_path = path[3:]  # drop "v1/"
+    else:
+        forward_path = path
+    if forward_path:
+        upstream_url = f"{UPSTREAM_BASE_URL}/{forward_path}"
+    else:
+        upstream_url = UPSTREAM_BASE_URL
     headers = dict(request.headers)
     headers.pop("host", None)
     headers.pop("content-length", None)

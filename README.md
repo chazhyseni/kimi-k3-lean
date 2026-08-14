@@ -43,34 +43,72 @@ One command, from anywhere:
 curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
 ```
 
-That's the whole thing. The script clones the repo to `~/.kimi-k3-lean`,
-builds the C engine, and starts the OpenAI server on
-`http://127.0.0.1:8080`. No sudo, no system installation.
-
-If you already have the repo cloned, the equivalent is:
+That installs the `kimi-k3-lean` CLI to `~/.local/bin/`. From then on,
+the only command you ever need is:
 
 ```
-git clone https://github.com/chazhyseni/kimi-k3-lean.git
-cd kimi-k3-lean
-./scripts/setup-and-serve.sh
+kimi-k3-lean serve
 ```
 
-### What the script does
+It starts the OpenAI server on `http://127.0.0.1:8080`. Test it:
+
+```
+TOKEN=$(grep ^K3_API_KEY= ~/.kimi-k3-lean/server.env | cut -d= -f2)
+curl http://127.0.0.1:8080/v1/models -H "Authorization: Bearer $TOKEN"
+```
+
+### What `bootstrap.sh` does
 
 The first time you run it, four steps in order. All idempotent and
-resumable:
+each can be re-run freely:
 
-1. **Install OS-level prereqs** (`gcc`, `cmake`, `python3`,
-   `safetensors`) if they're missing. Auto-detects Debian/Ubuntu,
-   Fedora/RHEL, or macOS and uses the matching package manager. ~2 min.
-2. **Build** `libk3.so` and the `k3` CLI. ~30 sec.
-3. **Download** Kimi K3 weights from HuggingFace via the article's
-   `download-model.sh`. ~1.56 TB, resumable. ~3 hours.
-4. **Convert** to native format via `tools/convert.py`. ~1 hour.
-5. **Start** the OpenAI server on `http://127.0.0.1:8080`. Runs in the
-   foreground; Ctrl+C to stop.
+1. Clone the repo to `~/.kimi-k3-lean` (depth 1, ~5 sec).
+2. Build `libk3.so` + `k3` from `src/` (~30 sec on a typical laptop).
+3. Start the OpenAI server in the background; write `~/.kimi-k3-lean/server.env`
+   with the bearer token, port, host.
+4. Point Hermes at the local URL (if `hermes` is on PATH) — `model.base_url`,
+   `model.api_key`, `model.default`, and `providers.ollama-launch.models`
+   get the new model name appended so `hermes -m kimi-k3` works.
+5. Install the `kimi-k3-lean` launcher to `~/.local/bin/` so subsequent
+   sessions just type `kimi-k3-lean serve`.
+
+After bootstrap, the daily-use surface is just:
+
+```
+kimi-k3-lean serve      # start the server (background)
+kimi-k3-lean status     # PID + URL + log path
+kimi-k3-lean models     # curl /v1/models
+kimi-k3-lean chat -m hi # one-shot /v1/chat/completions
+kimi-k3-lean stop       # kill the server
+kimi-k3-lean doctor     # diagnostic state
+kimi-k3-lean fetch      # download K3 weights (~982 GB, ~4 hours)
+kimi-k3-lean stack up --webui  # full LAN stack: Caddy + gateway + router + Open WebUI
+kimi-k3-lean uninstall  # revert Hermes, remove launcher
+```
+
+### `scripts/setup-and-serve.sh` (full-automation alternative)
+
+If you want everything — prereqs, build, download, convert, server —
+in one ~4-hour unattended run, use `scripts/setup-and-serve.sh`
+instead of `bootstrap.sh`:
+
+1. Install OS-level prereqs (`gcc`, `cmake`, `python3`, `safetensors`)
+   if missing. Auto-detects Debian/Ubuntu, Fedora/RHEL, or macOS.
+2. Build `libk3.so` and the `k3` CLI.
+3. Download Kimi K3 weights from HuggingFace (~1.56 TB, resumable,
+   ~3 hours).
+4. Convert to native format via `tools/convert.py` (~1 hour).
+5. Start the OpenAI server on `http://127.0.0.1:8080`. Foreground;
+   Ctrl+C to stop.
 
 If any step fails, re-run the script — it picks up where it left off.
+Flags: `--install-deps`, `--build-only`, `--download-only`,
+`--convert-only`, `--serve-only`. Each idempotent.
+
+The tradeoff: bootstrap.sh + `kimi-k3-lean fetch` is faster to first
+working endpoint (~1 minute for the HTTP scaffold, ~4 hours for the
+real model); setup-and-serve.sh is faster to first real-token
+response after the build environment is ready.
 
 ### Test it
 
@@ -821,15 +859,45 @@ VERDICT: ENGINE MATCHES THE REFERENCE EXACTLY
 
 ### Shared LAN service (multi-user, browser-accessible, agent-CLI accessible)
 
-See **[`deploy/README.md`](deploy/README.md)** for the full guide.
-The TL;DR:
+After `bootstrap.sh` installs the launcher, the entire LAN stack comes
+up with one command:
+
+```bash
+# Bare stack (Caddy + gateway + router, no chat UI)
+kimi-k3-lean stack up
+
+# Full stack including Open WebUI for browser-based chats
+kimi-k3-lean stack up --webui
+
+# Tear down / inspect
+kimi-k3-lean stack down
+kimi-k3-lean stack status
+kimi-k3-lean stack logs gateway
+```
+
+This wraps `docker compose -f deploy/compose.yml`, creating
+`deploy/.env` from the example if missing.
+
+What you get:
+
+| URL | What it serves |
+|---|---|
+| `http://localhost/v1/models` | OpenAI endpoint (Caddy → gateway → router → model) |
+| `http://localhost/llm/v1/...` | Same, with `/llm` prefix stripped |
+| `http://localhost/healthz` | Liveness probe (public, no auth) |
+| `http://localhost/workspace/...` | Model browser page |
+| `http://localhost/client/...` | Laptop installer (`curl | bash` one-liner) |
+| `http://localhost/` | Open WebUI chat (only with `--webui`) |
+
+See **[`deploy/README.md`](deploy/README.md)** for the full reference,
+Caddyfile internals, and the gateway's auth/size-limit/streaming pattern.
+
+For direct `docker compose` users (without the launcher):
 
 ```bash
 cd deploy
-cp .env.example .env
-# Edit .env — set INTERNAL_API_KEY=$(openssl rand -hex 32), SERVER_NAME, etc.
-docker compose up -d --build                       # proxy stack
-docker compose --profile with-k3 up -d --build    # + K3 backend (after download)
+cp .env.example .env           # set INTERNAL_API_KEY=$(openssl rand -hex 32)
+docker compose --profile with-k3 --profile with-webui up -d --build
 ```
 
 From any client on the LAN:
@@ -840,10 +908,8 @@ source ~/llm-client/remote-env.sh
 claude         # Claude Code, OpenCode, aider, Qwen — all use kimi-k3-lean
 ```
 
-The deployment uses Caddy for TLS + routing, a gateway for bearer-token
-auth, a router for multi-model dispatch, and a workspace service for
-the model browser page. Pattern matches `/home/chaz/llms/llm-server/private-llm`
-but trimmed for CPU-only / single-binary / cross-platform.
+Pattern matches `/home/chaz/llms/llm-server/private-llm` but trimmed
+for CPU-only / single-binary / cross-platform.
 
 ### Point Hermes at the deploy backend
 
