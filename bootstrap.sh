@@ -305,6 +305,32 @@ SERVER_PID=$!
 echo "$SERVER_PID" > "$K3_DIR/server.pid"
 ok "server PID: $SERVER_PID  (log: $K3_DIR/server.log)"
 
+# Quick early-exit check: if python crashed during import (e.g. SyntaxError
+# in serve/, missing module, etc.), the wrapper shell PID may still appear
+# alive but no python is bound. After 1s, check whether the python process
+# actually exists.
+sleep 1
+real_python=""
+if [ -d "/proc/$SERVER_PID" ]; then
+    # Walk children of the captured PID; the bash that ran python3 forks
+    # a python interpreter whose PID is one of its children.
+    for child in /proc/[0-9]*; do
+        [ -r "$child/stat" ] || continue
+        cpid=$(basename "$child")
+        ppid_field=$(awk '{print $4}' "$child/stat" 2>/dev/null || echo "")
+        if [ "$ppid_field" = "$SERVER_PID" ]; then
+            cmd=$(tr '\0' ' ' < "$child/cmdline" 2>/dev/null || echo "")
+            case "$cmd" in
+                *serve/__main__.py*) real_python=$cpid; break ;;
+            esac
+        fi
+    done
+fi
+if [ -z "$real_python" ]; then
+    warn "captured PID $SERVER_PID has no python child; surfacing log tail"
+    tail -n 20 "$K3_DIR/server.log" 2>/dev/null | sed "s/^/    /" || true
+fi
+
 # Defensive: if for some reason the captured PID isn't the server
 # (e.g. python printed an error and forked something else), discover
 # the real one. pgrep is racy; the /proc/$p/cwd symlink check avoids
@@ -320,6 +346,17 @@ if ! ps -p "$SERVER_PID" -o args= 2>/dev/null | grep -q "serve/__main__.py"; the
             esac
         fi
     done
+fi
+
+# If the previous run left a non-empty log, surface the last few lines
+# during startup so a failure self-diagnoses without the user needing
+# to \`tail -f\`.
+if [ -s "$K3_DIR/server.log" ]; then
+    last_lines=$(tail -n 5 "$K3_DIR/server.log" 2>/dev/null || true)
+    if [ -n "$last_lines" ]; then
+        echo "last server.log lines from prior run:"
+        printf "%s\n" "$last_lines" | sed "s/^/    /"
+    fi
 fi
 
 # ----- 5. wait for /v1/models (max 30s) -----
