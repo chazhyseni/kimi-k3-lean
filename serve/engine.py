@@ -39,6 +39,7 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
+import threading
 from ctypes import (
     POINTER,
     byref,
@@ -176,6 +177,10 @@ class Engine:
         """
         lib_path = library_path or _find_library()
         self._lib = ctypes.CDLL(lib_path)
+        # The C engine is single-caller per context. The server's
+        # ThreadingHTTPServer can dispatch concurrent requests on
+        # different threads, so we serialize C calls here.
+        self._lock = threading.Lock()
 
         # Bind the C functions we'll use. ctypes lets us skip the ones we
         # don't call.

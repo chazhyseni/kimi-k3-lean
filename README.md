@@ -413,10 +413,19 @@ Engine.close()                   → k3_close(ctx)
 ```
 
 The HTTP layer is served from the same ctypes wrapper for any model
-path the engine accepts (real K3 checkpoint, the article's
-`tiny_k3.bin` fixture, or any future model). The C engine is verified
-bit-identical to the article's oracle on synthetic weights via
-`make test`.
+path the engine accepts (real K3 checkpoint, the article's `tiny_k3.bin`
+fixture, or any future model). The C engine is verified bit-identical
+to the article's oracle on synthetic weights via `make test` (32
+teacher-forcing positions + 20 greedy + 20 incremental, all byte-
+identical to the reference).
+
+Note on the `tiny_k3.bin` fixture: it ships with vocab=256, which is
+deliberately tiny for the GATE tests. A real tokenizer (vocab 163,584)
+will produce token IDs the fixture's embedding table doesn't have. To
+exercise real inference through the OpenAI HTTP layer you need either
+a downloaded K3 checkpoint or a properly-sized fixture built via
+`tools/make_tiny_checkpoint.py <out_dir> --vocab 163584` against a
+matching tokenizer.
 
 ---
 
