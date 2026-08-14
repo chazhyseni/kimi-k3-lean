@@ -37,45 +37,76 @@ to a Python server via ctypes. That library is the seam.
 
 ## Quick start
 
-You need: Docker, Python 3.11+, `make`, `gcc`, and ~1.1 TB of free
-disk for the K3 weights.
+Three commands:
 
-```bash
+```
 git clone https://github.com/chazhyseni/kimi-k3-lean.git
 cd kimi-k3-lean
 ./scripts/setup-and-serve.sh
 ```
 
-The script will:
+That's all a new user types. The script handles every step from there.
 
-1. **Build** `libk3.so` and the `k3` CLI (~30 seconds)
-2. **Download** Kimi K3 weights from HuggingFace (~1.56 TB, ~3 hours, resumable)
-3. **Convert** to native format (Python with `safetensors`, ~1 hour)
-4. **Start** the server on `http://127.0.0.1:8080`
+### What the script does
 
-Once it's running, in another terminal:
+Runs the four steps in order, all automatically, all idempotent and
+resumable:
 
-```bash
+1. **Install OS-level prereqs** (`gcc`, `cmake`, `python3`,
+   `safetensors`) if they're missing. Auto-detects Debian/Ubuntu,
+   Fedora/RHEL, or macOS and uses the matching package manager. ~2 min.
+2. **Build** `libk3.so` and the `k3` CLI. ~30 sec.
+3. **Download** Kimi K3 weights from HuggingFace via the article's
+   `download-model.sh`. ~1.56 TB, resumable. ~3 hours.
+4. **Convert** to native format via `tools/convert.py`. ~1 hour.
+5. **Start** the OpenAI server on `http://127.0.0.1:8080`. Runs in the
+   foreground; Ctrl+C to stop.
+
+If any step fails, re-run the script — it picks up where it left off.
+
+### Test it
+
+Open another terminal while the server is running:
+
+```
 curl http://127.0.0.1:8080/v1/models
 curl -X POST http://127.0.0.1:8080/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{"model":"kimi-k3","messages":[{"role":"user","content":"hi"}],"max_tokens":32}'
 ```
 
+### Point your harness at it
+
+```
+hermes config set model.base_url http://127.0.0.1:8080/v1
+hermes config set model.default kimi-k3
+# Or any other harness — Open WebUI, LM Studio, Continue, etc.
+```
+
+### Time to first token
+
+| Step | Time |
+|---|---|
+| `git clone` | ~30 sec |
+| Build | ~30 sec |
+| Download weights | ~3 hours |
+| Convert | ~1 hour |
+| **First-run total** | **~4 hours** (mostly idle waiting) |
+| Subsequent runs (`./scripts/setup-and-serve.sh --serve-only`) | ~5 sec |
+
 ### Subcommands
 
-| Flag | What it does |
+| Flag | Use |
 |---|---|
-| `--install-deps` | Install OS-level prereqs (gcc, cmake, python3, safetensors). |
-| `--build-only` | Build the C engine; don't download weights. |
-| `--download-only` | Download K3 weights to `./checkpoints/k3`. |
-| `--convert-only` | Convert a downloaded checkpoint to native format. |
-| `--serve-only` | Skip everything; just run the server. |
+| `--install-deps` | Install OS-level prereqs (already auto-detected, but explicit if you want) |
+| `--build-only` | Just build the C engine |
+| `--download-only` | Just download weights |
+| `--convert-only` | Just convert the checkpoint |
+| `--serve-only` | Skip everything; just start the server |
 
-Each step is idempotent and resumable — re-running picks up where the
-previous run stopped.
+Each is idempotent — re-run freely.
 
-Windows equivalent: `.\scripts\setup-and-serve.ps1` with the same flags.
+Windows: `.\scripts\setup-and-serve.ps1` with the same flags.
 
 ---
 
