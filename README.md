@@ -135,33 +135,66 @@ Windows: `.\scripts\setup-and-serve.ps1` with the same flags.
 
 ## Architecture
 
-The thing kimi-k3-lean adds to the article's engine is a single seam:
-`libk3.so` exposes the engine's C API to a Python OpenAI server via ctypes.
+The thing kimi-k3-lean adds to the article's engine is a single seam.
 Everything else is the article's engine, untouched.
 
+<div align="center">
+
 ```mermaid
-flowchart TB
-    client["any OpenAI-compat client<br/>(Hermes, Open WebUI, LM Studio,<br/>Claude Code, aider, Pi, OpenCode, raw curl)"]
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#f5f3ff',
+  'primaryBorderColor': '#5d3fd3',
+  'primaryTextColor': '#1a1a1a',
+  'lineColor': '#5d3fd3',
+  'tertiaryColor': '#f0fdf4',
+  'fontFamily': 'Helvetica, Arial, sans-serif',
+  'fontSize': '13px'
+}}%%
+flowchart LR
+    subgraph client["<b>client</b>"]
+        direction TB
+        h1["<b>any OpenAI-compat harness</b><br/><br/>Hermes · Open WebUI · LM Studio<br/>Claude Code · Aider · Pi · OpenCode<br/>the openai Python client · raw curl"]
+        style h1 fill:#fffbe8,stroke:#d4a017,stroke-width:1px,color:#1a1a1a
+    end
 
-    server["<b>serve/server.py</b><br/>stdlib http.server<br/>+ ThreadingHTTPServer<br/>SSE streaming, bearer auth, 16 MB cap"]
+    subgraph seam["<b>the seam  (what kimi-k3-lean adds)</b>"]
+        direction TB
+        s1["<b>serve/server.py</b><br/>stdlib http.server<br/>+ ThreadingHTTPServer<br/>SSE · auth · 16 MB cap"]
+        s2["<b>serve/engine.py</b><br/>ctypes wrapper<br/>14 public C funcs"]
+        s3["<b>libk3.so</b><br/>162 KB shared library<br/><br/>k3_open · k3_step · k3_generate<br/>k3_save_state · k3_load_state<br/>k3_tokenize · k3_detokenize<br/>k3_get_stats · k3_reset_stats<br/>k3_model_id · k3_n_layers<br/>k3_vocab_size · k3_ctx_size · k3_close"]
+        s1 --> s2
+        s2 --> s3
+        style s1 fill:#ede9fe,stroke:#5d3fd3,stroke-width:2px,color:#1a1a1a
+        style s2 fill:#ede9fe,stroke:#5d3fd3,stroke-width:2px,color:#1a1a1a
+        style s3 fill:#ddd6fe,stroke:#5d3fd3,stroke-width:3px,color:#1a1a1a
+    end
 
-    libk3["<b>libk3.so</b>  (162 KB)<br/>14 public C funcs<br/>k3_open / k3_step / k3_generate<br/>k3_save_state / k3_load_state<br/>k3_tokenize / k3_detokenize<br/>k3_get_stats / k3_reset_stats<br/>k3_model_id / k3_n_layers<br/>k3_vocab_size / k3_ctx_size<br/>k3_close"]
+    subgraph engine["<b>engine  (the article's code, unchanged)</b>"]
+        direction TB
+        e1["<b>kimi-k3-in-c</b><br/>FareedKhan-dev / kimi-k3-in-c"]
+        e2["<b>2.78T params</b><br/>93 layers  (69 KDA + 24 MLA)<br/>896 routed experts, top-16<br/>hidden 7168 · vocab 163,840"]
+        e3["<b>1.45 TB on disk</b><br/>MXFP4 experts (OCP MX FP4)<br/>108.81 GB streaming trunk<br/>LRU expert cache"]
+        e1 --> e2 --> e3
+        style e1 fill:#f0f0f0,stroke:#666666,stroke-width:1px,color:#1a1a1a
+        style e2 fill:#f0f0f0,stroke:#666666,stroke-width:1px,color:#1a1a1a
+        style e3 fill:#f0f0f0,stroke:#666666,stroke-width:1px,color:#1a1a1a
+    end
 
-    engine["<b>kimi-k3-in-c engine</b><br/>(FareedKhan-dev/kimi-k3-in-c)<br/>unchanged C source<br/>see article for full architecture"]
+    h1 -->|<b>POST /v1/chat/completions</b>| s1
+    s3 -->|<b>C ABI</b>| e1
 
-    client -- "POST /v1/chat/completions" --> server
-    server -- "ctypes" --> libk3
-    libk3 -- "C ABI" --> engine
-
-    click engine "https://github.com/FareedKhan-dev/kimi-k3-in-c" "view the engine on GitHub"
+    click e1 "https://github.com/FareedKhan-dev/kimi-k3-in-c" "view the engine on GitHub"
+    click e3 "https://github.com/FareedKhan-dev/kimi-k3-in-c/blob/main/docs/PERFORMANCE.md" "the article's measured data"
 ```
 
-The engine is the article's work — see its
-[architecture diagram](https://raw.githubusercontent.com/FareedKhan-dev/kimi-k3-in-c/main/docs/images/main_architecture.png)
+</div>
+
+The engine is the article's work. See [its own architecture
+diagram](https://raw.githubusercontent.com/FareedKhan-dev/kimi-k3-in-c/main/docs/images/main_architecture.png)
 for the per-token forward step, the in-RAM state, the disk layout, and
 the O_DIRECT measurement methodology.
 
-What `kimi-k3-lean` ships, in addition to the engine:
+What kimi-k3-lean ships, in addition to the engine:
 
 | New thing | What it is | Where it lives |
 |---|---|---|
@@ -170,13 +203,13 @@ What `kimi-k3-lean` ships, in addition to the engine:
 | `serve/engine.py` | ctypes wrapper, maps the 14 C functions to a Python `Engine` class | `serve/engine.py` |
 | `bootstrap.sh` / `bootstrap.ps1` | One-command install from anywhere | `bootstrap.sh`, `bootstrap.ps1` |
 | `scripts/setup-and-serve.sh` | Build + download + convert + serve, stepwise | `scripts/setup-and-serve.sh` |
-| `tools/convert.py` | HuggingFace safetensors → native format, no PyTorch needed | `tools/convert.py` |
+| `tools/convert.py` | HuggingFace safetensors → native format, no PyTorch | `tools/convert.py` |
 | `deploy/` | LAN deployment stack (Caddy + gateway + router + workspace) | `deploy/` |
 | `packaging/` | Homebrew / MSVC / RPM recipes | `packaging/` |
 
-Engine internals, in detail: see `ENGINE.md`'s source material in
-`include/k3/k3.h`, `src/core/k3_ops.c`, `src/cache/k3_cache.c`,
-and `docs/PERFORMANCE.md` (the article's measured data).
+Engine internals, in detail: see `include/k3/k3.h`, `src/core/k3_ops.c`,
+`src/cache/k3_cache.c`, and `docs/PERFORMANCE.md` (the article's
+measured data).
 
 ### Per-token forward step
 
