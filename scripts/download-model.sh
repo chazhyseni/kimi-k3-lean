@@ -55,7 +55,7 @@ fi
 ensure_hf() {
     # 1. Path-local venv under the repo dir (preferred when writable).
     if [ -z "${HF_VENV:-}" ]; then
-        for candidate in "$K3_DIR/.hf-venv" "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean/hf-venv" "$HOME/.venvs/hf"; do
+        for candidate in "${K3_DIR:-}/.hf-venv" "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean/hf-venv" "$HOME/.venvs/hf" "$HOME/.local/share/kimi-k3-lean/hf-venv"; do
             if [ -x "$candidate/bin/hf" ]; then
                 HF_VENV="$candidate"
                 break

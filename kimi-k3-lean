@@ -339,7 +339,28 @@ print(json.dumps({'model':sys.argv[1],'messages':[{'role':'user','content':sys.a
 }
 
 _k3_fetch() {
-    exec "$K3_HOME/scripts/setup-and-serve.sh" --download-only
+    # Use download-model.sh directly. setup-and-serve.sh is a heavier
+    # wrapper that does more than the user wants here.
+    local model_dir="${K3_MODEL:-$K3_HOME/checkpoints/k3}"
+    if [ "${1:-}" = "--status" ]; then
+        if [ -f "$K3_HOME/download.pid" ]; then
+            local pid; pid=$(cat "$K3_HOME/download.pid" 2>/dev/null || echo)
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                echo "download running, pid=$pid"
+                echo "log: $K3_HOME/download.log"
+                tail -3 "$K3_HOME/download.log" 2>/dev/null || true
+                return 0
+            fi
+        fi
+        echo "no download in progress"
+        if [ -d "$model_dir" ] && [ -n "$(ls -A "$model_dir" 2>/dev/null)" ]; then
+            echo "model already at $model_dir"
+        fi
+        return 0
+    fi
+    export K3_DIR="$K3_HOME"
+    export K3_MODEL_DIR="$model_dir"
+    exec "$K3_HOME/scripts/download-model.sh" "$model_dir"
 }
 
 _k3_doctor() {
@@ -644,7 +665,7 @@ case "$cmd" in
     status)        _k3_status ;;
     models|list)   _k3_models ;;
     chat|ask)      _k3_chat "$@" ;;
-    fetch)         _k3_fetch ;;
+    fetch)         _k3_fetch "$@" ;;
     doctor)        _k3_doctor ;;
     config)        _k3_config "$@" ;;
     stack)         _k3_stack "$@" ;;

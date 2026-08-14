@@ -218,6 +218,7 @@ elif [ ! -t 0 ] && [ ! "${K3_QUIET:-0}" = "1" ]; then
         warn "  install with: pipx install huggingface_hub"
     fi
 
+    export K3_DIR K3_MODEL_DIR
     nohup bash "$K3_DIR/scripts/download-model.sh" "$K3_MODEL_DIR" \
         >> "$K3_DIR/download.log" 2>&1 &
     echo "$!" > "$K3_DIR/download.pid"
