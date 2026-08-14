@@ -135,10 +135,11 @@ Windows: `.\scripts\setup-and-serve.ps1` with the same flags.
 
 ## Architecture
 
-The thing kimi-k3-lean adds to the article's engine is a single seam.
-Everything else is the article's engine, untouched.
+A single request walks through eight layers, from the harness to the
+final token. The diagram below shows the request flow with what each
+layer does and what it costs.
 
-<div align="center">
+### Layer 1: what happens on a single `POST /v1/chat/completions`
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {
@@ -146,70 +147,145 @@ Everything else is the article's engine, untouched.
   'primaryBorderColor': '#5d3fd3',
   'primaryTextColor': '#1a1a1a',
   'lineColor': '#5d3fd3',
-  'tertiaryColor': '#f0fdf4',
+  'activationBorderColor': '#5d3fd3',
   'fontFamily': 'Helvetica, Arial, sans-serif',
   'fontSize': '13px'
 }}%%
-flowchart LR
-    subgraph client["<b>client</b>"]
-        direction TB
-        h1["<b>any OpenAI-compat harness</b><br/><br/>Hermes · Open WebUI · LM Studio<br/>Claude Code · Aider · Pi · OpenCode<br/>the openai Python client · raw curl"]
-        style h1 fill:#fffbe8,stroke:#d4a017,stroke-width:1px,color:#1a1a1a
+sequenceDiagram
+    autonumber
+    participant H as Harness
+    participant S as serve/server.py<br/>(stdlib HTTP)
+    participant E as serve/engine.py<br/>(ctypes)
+    participant L as libk3.so<br/>(162 KB)
+    participant C as C engine<br/>(k3_step)
+    participant D as NVMe
+    participant M as RAM
+
+    H->>S: POST /v1/chat/completions<br/>{"messages": [...], "max_tokens": 256}
+    S->>S: hmac.compare_digest(auth)
+    S->>S: parse JSON (cap 16 MB)
+    S->>E: Engine.open(path, preset)   [once per process]
+    E->>L: ctypes.CDLL("libk3.so")
+    L->>C: k3_open(path, preset)
+    C->>M: mmap(config.json + tokenizer)
+    C->>D: read safetensors index (~96 MB)
+    C->>M: pin N trunk layers (preset)
+    S->>E: Engine.step(prompt, max_tokens)
+    E->>L: k3_tokenize(text, ...)
+    L->>C: -> token ids
+    loop for each new token (until EOS or max_tokens)
+        E->>L: k3_step(ctx, token_ids, max, out, cap)
+        L->>C: forward one step
+        C->>M: read trunk layer (108.81 GB pinned/fitted)
+        C->>D: stream 16 routed experts per layer (~25.83 GB/token)
+        D-->>C: 16.7 MB expert × 16
+        C->>M: update LRU cache
+        C->>C: KDA recurrence + MLA KV
+        C->>L: argmax over 163,840 logits
+        L-->>E: token id
+        E-->>S: {"choices":[{"delta":{"content":"token"}}]}
+        S-->>H: data: {"token"}
+
     end
+    S-->>H: data: [DONE]
 
-    subgraph seam["<b>the seam  (what kimi-k3-lean adds)</b>"]
-        direction TB
-        s1["<b>serve/server.py</b><br/>stdlib http.server<br/>+ ThreadingHTTPServer<br/>SSE · auth · 16 MB cap"]
-        s2["<b>serve/engine.py</b><br/>ctypes wrapper<br/>14 public C funcs"]
-        s3["<b>libk3.so</b><br/>162 KB shared library<br/><br/>k3_open · k3_step · k3_generate<br/>k3_save_state · k3_load_state<br/>k3_tokenize · k3_detokenize<br/>k3_get_stats · k3_reset_stats<br/>k3_model_id · k3_n_layers<br/>k3_vocab_size · k3_ctx_size · k3_close"]
-        s1 --> s2
-        s2 --> s3
-        style s1 fill:#ede9fe,stroke:#5d3fd3,stroke-width:2px,color:#1a1a1a
-        style s2 fill:#ede9fe,stroke:#5d3fd3,stroke-width:2px,color:#1a1a1a
-        style s3 fill:#ddd6fe,stroke:#5d3fd3,stroke-width:3px,color:#1a1a1a
-    end
 
-    subgraph engine["<b>engine  (the article's code, unchanged)</b>"]
-        direction TB
-        e1["<b>kimi-k3-in-c</b><br/>FareedKhan-dev / kimi-k3-in-c"]
-        e2["<b>2.78T params</b><br/>93 layers  (69 KDA + 24 MLA)<br/>896 routed experts, top-16<br/>hidden 7168 · vocab 163,840"]
-        e3["<b>1.45 TB on disk</b><br/>MXFP4 experts (OCP MX FP4)<br/>108.81 GB streaming trunk<br/>LRU expert cache"]
-        e1 --> e2 --> e3
-        style e1 fill:#f0f0f0,stroke:#666666,stroke-width:1px,color:#1a1a1a
-        style e2 fill:#f0f0f0,stroke:#666666,stroke-width:1px,color:#1a1a1a
-        style e3 fill:#f0f0f0,stroke:#666666,stroke-width:1px,color:#1a1a1a
-    end
-
-    h1 -->|<b>POST /v1/chat/completions</b>| s1
-    s3 -->|<b>C ABI</b>| e1
-
-    click e1 "https://github.com/FareedKhan-dev/kimi-k3-in-c" "view the engine on GitHub"
-    click e3 "https://github.com/FareedKhan-dev/kimi-k3-in-c/blob/main/docs/PERFORMANCE.md" "the article's measured data"
+    Note over S: Python GIL released between tokens;<br/>SSE flush per token
 ```
 
-</div>
+### Layer 2: where the disk and RAM are
 
-The engine is the article's work. See [its own architecture
-diagram](https://raw.githubusercontent.com/FareedKhan-dev/kimi-k3-in-c/main/docs/images/main_architecture.png)
-for the per-token forward step, the in-RAM state, the disk layout, and
-the O_DIRECT measurement methodology.
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#f5f3ff',
+  'primaryBorderColor': '#5d3fd3',
+  'primaryTextColor': '#1a1a1a',
+  'lineColor': '#5d3fd3',
+  'fontFamily': 'Helvetica, Arial, sans-serif',
+  'fontSize': '13px'
+}}%%
+flowchart TB
+    subgraph ram["<b>RAM   (preset: desktop = 31.9 GB peak RSS)</b>"]
+        direction TB
+        subgraph trunk["<b>trunk ring   (16.0 GB pinned in this preset)</b>"]
+            t1["16 of 93 layers resident<br/>residual state, no expert weights<br/>~1 GB / layer at bf16"]
+        end
+        subgraph cache["<b>LRU expert cache   (10.0 GB)</b>"]
+            c1["hot experts stay pinned<br/>top-k=16 per layer<br/>about 600 experts resident"]
+        end
+        subgraph state["<b>per-context state</b>"]
+            st1["KDA recurrent state<br/>~few MB / layer"]
+            st2["MLA KV cache<br/>layer-specific"]
+        end
+        style ram fill:#fef3f2,stroke:#dc2626,stroke-width:2px
+        style trunk fill:#fee2e2,stroke:#dc2626,stroke-width:1px
+        style cache fill:#fef3c7,stroke:#d97706,stroke-width:1px
+        style state fill:#f3e8ff,stroke:#7c3aed,stroke-width:1px
+        style t1 fill:#fef2f2,stroke:#dc2626
+        style c1 fill:#fef9c3,stroke:#d97706
+        style st1 fill:#ede9fe,stroke:#7c3aed
+        style st2 fill:#ede9fe,stroke:#7c3aed
+    end
 
-What kimi-k3-lean ships, in addition to the engine:
+    subgraph nvme["<b>NVMe   (1.45 TB expert pool + 108.81 GB trunk on disk)</b>"]
+        direction TB
+        subgraph disk_trunk["<b>trunk  (108.81 GB)</b>"]
+            dt1["93 layers at bf16<br/>2.34 GB / layer on disk<br/>2.34 GB / layer in RAM when pinned"]
+        end
+        subgraph disk_experts["<b>expert pool  (1.45 TB MXFP4)</b>"]
+            de1["92 MoE layers × 896 experts = 82,432 experts<br/>~16.7 MB per expert in MXFP4<br/>read 16.7 MB × 16 routed = 267 MB / token"]
+        end
+        subgraph disk_embed["<b>embed + lm_head  (~4.7 GB)</b>"]
+            dm1["vocab 163,840 × hidden 7168 bf16"]
+        end
+        style nvme fill:#f0f9ff,stroke:#0369a1,stroke-width:2px
+        style disk_trunk fill:#e0f2fe,stroke:#0369a1,stroke-width:1px
+        style disk_experts fill:#e0f2fe,stroke:#0369a1,stroke-width:1px
+        style disk_embed fill:#e0f2fe,stroke:#0369a1,stroke-width:1px
+        style dt1 fill:#dbeafe,stroke:#0369a1
+        style de1 fill:#dbeafe,stroke:#0369a1
+        style dm1 fill:#dbeafe,stroke:#0369a1
+    end
+
+    disk_trunk -. "16.0 GB pinned<br/>~1 GB / layer" .-> trunk
+    disk_experts -. "16 routed × 16.7 MB"<br/>per token .-> cache
+    disk_embed -. "lookup" .-> state
+
+    click disk_experts "https://github.com/FareedKhan-dev/kimi-k3-in-c/blob/main/docs/PERFORMANCE.md" "the article's measured data"
+```
+
+### What kimi-k3-lean adds
+
+Everything left of the C engine — the request enters, becomes OpenAI
+JSON, hits the ctypes wrapper, and the wrapper hands the work to the
+article's engine via a 14-function public C API:
 
 | New thing | What it is | Where it lives |
 |---|---|---|
-| `libk3.so` | 162 KB shared library exposing the engine's public C API | `src/lib/k3_api.c`, `src/lib/k3_engine.c` |
+| `libk3.so` | 162 KB shared library exposing the engine's 14 public C funcs | `src/lib/k3_api.c`, `src/lib/k3_engine.c` |
 | `serve/server.py` | OpenAI Chat Completions HTTP server, stdlib-only | `serve/server.py` |
-| `serve/engine.py` | ctypes wrapper, maps the 14 C functions to a Python `Engine` class | `serve/engine.py` |
+| `serve/engine.py` | ctypes wrapper, maps the 14 C funcs to a Python `Engine` class | `serve/engine.py` |
 | `bootstrap.sh` / `bootstrap.ps1` | One-command install from anywhere | `bootstrap.sh`, `bootstrap.ps1` |
 | `scripts/setup-and-serve.sh` | Build + download + convert + serve, stepwise | `scripts/setup-and-serve.sh` |
 | `tools/convert.py` | HuggingFace safetensors → native format, no PyTorch | `tools/convert.py` |
 | `deploy/` | LAN deployment stack (Caddy + gateway + router + workspace) | `deploy/` |
 | `packaging/` | Homebrew / MSVC / RPM recipes | `packaging/` |
 
-Engine internals, in detail: see `include/k3/k3.h`, `src/core/k3_ops.c`,
-`src/cache/k3_cache.c`, and `docs/PERFORMANCE.md` (the article's
-measured data).
+The 14 public C functions (`include/libk3/libk3.h`):
+
+```
+k3_open · k3_close · k3_step · k3_generate
+k3_save_state · k3_load_state
+k3_tokenize · k3_detokenize
+k3_get_stats · k3_reset_stats
+k3_model_id · k3_n_layers · k3_vocab_size · k3_ctx_size
+```
+
+Engine internals (per-token forward, state, disk layout in detail, O_DIRECT
+measurement methodology): see the article's
+[architecture diagram](https://raw.githubusercontent.com/FareedKhan-dev/kimi-k3-in-c/main/docs/images/main_architecture.png)
+and [`docs/PERFORMANCE.md`](https://github.com/FareedKhan-dev/kimi-k3-in-c/blob/main/docs/PERFORMANCE.md).
+Every number here is sourced from `include/k3/k3.h` and `docs/PERFORMANCE.md`.
 
 ### Per-token forward step
 
