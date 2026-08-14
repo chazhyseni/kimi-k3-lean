@@ -412,16 +412,48 @@ _k3_stack() {
         echo "docker compose plugin missing; install compose v2 (apt: docker-compose-plugin)"
         return 1
     fi
+    # Auto-handle docker client/daemon version mismatch.
+    # `docker compose up` against a daemon that's older than the client
+    # fails with "client version X is too new. Maximum supported API
+    # version is Y" -- a real user complaint. We parse `docker version`
+    # text output, then set DOCKER_API_VERSION to the older of the two
+    # when they disagree.
+    if command -v docker >/dev/null 2>&1; then
+        # Detect docker compose plugin / daemon version mismatch.
+        # `docker compose` can fail with "client version X is too new.
+        # Maximum supported API version is Y" because docker-compose-plugin
+        # 5.x vendors its own API client (1.53) that's newer than the
+        # daemon. `docker version` does NOT surface this — both Client
+        # and Server sections report the docker CLI's own version. So we
+        # probe with `docker compose ps` and parse the error.
+        probe_output=$(DOCKER_API_VERSION= docker compose ps 2>&1 || true)
+        # Match the daemon rejection. Use plain if/grep instead of bash
+        # pattern-match so we don't have to escape multi-globs.
+        if printf '%s' "$probe_output" | grep -q "Maximum supported API version"; then
+            # The daemon reports its max API version. Pin to that.
+            max_api=$(printf '%s' "$probe_output" | grep -oE "API version is [0-9]+\.[0-9]+" | grep -oE "[0-9]+\.[0-9]+" | head -1)
+            cur_client=$(printf '%s' "$probe_output" | grep -oE "client version [0-9]+\.[0-9]+" | grep -oE "[0-9]+\.[0-9]+" | head -1)
+            if [ -n "$max_api" ]; then
+                export DOCKER_API_VERSION="$max_api"
+                echo "docker compose plugin ($cur_client) newer than daemon (max $max_api); pinning DOCKER_API_VERSION=$max_api"
+            fi
+        fi
+    fi
     local compose=(docker compose -f "$deploy_dir/compose.yml")
     case "$sub" in
         up)
             local profiles=()
-            # parse flags: --webui, --lan (sets tls=internal), --public (no tls=internal)
+            local clean=0
+            local rebuild_only=0
+            # parse flags: --webui, --k3, --clean (nuke + recreate), --rebuild
             while [ $# -gt 0 ]; do
                 case "$1" in
                     --webui)   profiles+=(--profile with-webui); shift ;;
                     --k3)      profiles+=(--profile with-k3); shift ;;
                     --lan)     profiles+=(--profile lan); shift ;;
+                    --clean)   clean=1; shift ;;
+                    --rebuild) rebuild_only=1; shift ;;
+                    --no-build) profiles+=(--no-build); shift ;;
                     *) echo "unknown flag: $1"; return 2 ;;
                 esac
             done
@@ -430,12 +462,35 @@ _k3_stack() {
                 cp "$deploy_dir/.env.example" "$deploy_dir/.env"
                 echo "created $deploy_dir/.env from example (edit before production!)"
             fi
+            # --clean: tear down the prior stack state (containers + orphan
+            # networks + dangling images) before bringing it back up. Use
+            # this when 'docker compose up' keeps failing with stale
+            # container names, partial volumes, or the same image-pull error.
+            if [ "$clean" = "1" ]; then
+                echo "--clean: tearing down prior stack state"
+                "${compose[@]}" "${profiles[@]}" down --remove-orphans 2>/dev/null || true
+                docker rm -f $(docker ps -aq --filter "label=com.docker.compose.project=kimi-k3-lean") 2>/dev/null || true
+                docker network prune -f --filter "label=com.docker.compose.project=kimi-k3-lean" 2>/dev/null || true
+            fi
+            # --rebuild only: pull + rebuild images, then stop. Useful when
+            # the user wants to verify a fresh image build resolves a bug
+            # without a full up.
+            if [ "$rebuild_only" = "1" ]; then
+                echo "--rebuild: rebuilding images"
+                "${compose[@]}" "${profiles[@]}" build "$@"
+                return 0
+            fi
             "${compose[@]}" "${profiles[@]}" up -d --build "$@"
             echo ""
             echo "stack up. Try:"
             echo "  kimi-k3-lean stack status"
-            echo "  curl http://localhost/v1/models -H \"Authorization: Bearer \$(grep ^INTERNAL_API_KEY= $deploy_dir/.env | cut -d= -f2)\""
+            echo "  curl http://localhost/v1/models -H \"Authorization: Bearer *** ^INTERNAL_API_KEY= $deploy_dir/.env | cut -d= -f2)\""
             echo "  open http://localhost/  (only with --webui)"
+            if [ "$clean" = "0" ]; then
+                echo ""
+                echo "If the stack fails with 'client version X too new' or stale image tags,"
+                echo "rerun with --clean:  kimi-k3-lean stack up --webui --clean"
+            fi
             ;;
         down)  "${compose[@]}" down "$@" ;;
         status) "${compose[@]}" ps ;;
@@ -477,7 +532,12 @@ _k3_help() {
     echo "  fetch              download K3 weights (delegates to setup-and-serve.sh)"
     echo "  doctor             print install state"
     echo "  config get|set|unset NAME [VALUE]"
-    echo "  stack up [--webui] docker compose up the full stack (Caddy+gateway+router+model+Open WebUI)"
+    echo "  stack up [--webui] [--k3] [--clean] [--rebuild]"
+    echo "                       Bring up the full stack (Caddy+gateway+router+model+Open WebUI)."
+    echo "                       --clean: tear down prior stack state first (fixes stale image /"
+    echo "                                container / network errors)"
+    echo "                       --rebuild: rebuild images and exit (no up)"
+    echo "                       --no-build: skip image build step"
     echo "  stack down         docker compose down"
     echo "  stack status       docker compose ps"
     echo "  stack logs [SVC]   tail compose logs"
