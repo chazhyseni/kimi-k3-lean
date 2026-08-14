@@ -214,24 +214,47 @@ _kill_prior_serve() {
     local sig="$1"
     shift
     for p in "$@"; do
-        if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
-            local pdir=""
-            if command -v lsof >/dev/null 2>&1; then
-                pdir=$(lsof -p "$p" -a -d cwd -F n 2>/dev/null | head -1 | sed "s/^n//")
-            elif [ -L "/proc/$p/cwd" ]; then
-                pdir=$(readlink "/proc/$p/cwd" 2>/dev/null || echo "")
-            fi
-            case "$pdir" in
-                "$K3_DIR"*)
-                    warn "killing prior server (PID $p, $sig)"
-                    if [ "$sig" = "SIGKILL" ]; then
-                        kill -9 "$p" 2>/dev/null || true
-                    else
-                        kill "$p" 2>/dev/null || true
-                    fi
-                    ;;
+        # Match on identity of being our process. We accept a PID if ANY
+        # of these hold (cross-platform):
+        #   1. /proc/PID/cwd resolves into $K3_DIR (Linux)
+        #   2. lsof on its cwd shows $K3_DIR (Linux + macOS w/ lsof)
+        #   3. ps command line contains $K3_DIR AND contains
+        #      serve/__main__.py (works anywhere ps exists)
+        # macOS has NO /proc filesystem; relying on it caused a silent
+        # no-op that left stale servers bound to the port.
+        if [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null; then
+            continue
+        fi
+        local matches=0
+        # 1. /proc/PID/cwd (Linux)
+        if [ -L "/proc/$p/cwd" ]; then
+            local cwd
+            cwd=$(readlink "/proc/$p/cwd" 2>/dev/null || echo "")
+            case "$cwd" in "$K3_DIR"*) matches=1 ;; esac
+        fi
+        # 2. lsof cwd (Linux, macOS with lsof)
+        if [ "$matches" = "0" ] && command -v lsof >/dev/null 2>&1; then
+            local cwd2
+            cwd2=$(lsof -p "$p" -a -d cwd -F n 2>/dev/null | head -1 | sed "s/^n//")
+            case "$cwd2" in "$K3_DIR"*) matches=1 ;; esac
+        fi
+        # 3. ps command line contains $K3_DIR + serve/__main__.py
+        #    (works on macOS, BSD, anything with ps)
+        if [ "$matches" = "0" ] && command -v ps >/dev/null 2>&1; then
+            local cmdline
+            cmdline=$(ps -p "$p" -o args= 2>/dev/null || true)
+            case "$cmdline" in
+                *serve/__main__.py*"$K3_DIR"*) matches=1 ;;
                 *) : ;;
             esac
+        fi
+        if [ "$matches" = "1" ]; then
+            warn "killing prior server (PID $p, $sig)"
+            if [ "$sig" = "SIGKILL" ]; then
+                kill -9 "$p" 2>/dev/null || true
+            else
+                kill "$p" 2>/dev/null || true
+            fi
         fi
     done
 }
@@ -259,7 +282,7 @@ fi
 # NOTE: Use case instead of `[ -n "$x" ]` because an empty prior_pids under
 # `set -euo pipefail` would make the conditional itself exit 1 and abort
 # the whole bootstrap. case always evaluates true (matched) so it doesn't trip set -e.
-prior_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}" || true)
+prior_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}" | tr "\n" "," | sed "s/,$//" || true)
 case "$prior_pids" in
     "")
         : ;;  # nothing stale; skip
@@ -305,47 +328,35 @@ SERVER_PID=$!
 echo "$SERVER_PID" > "$K3_DIR/server.pid"
 ok "server PID: $SERVER_PID  (log: $K3_DIR/server.log)"
 
-# Quick early-exit check: if python crashed during import (e.g. SyntaxError
-# in serve/, missing module, etc.), the wrapper shell PID may still appear
-# alive but no python is bound. After 1s, check whether the python process
-# actually exists.
-sleep 1
-real_python=""
-if [ -d "/proc/$SERVER_PID" ]; then
-    # Walk children of the captured PID; the bash that ran python3 forks
-    # a python interpreter whose PID is one of its children.
-    for child in /proc/[0-9]*; do
-        [ -r "$child/stat" ] || continue
-        cpid=$(basename "$child")
-        ppid_field=$(awk '{print $4}' "$child/stat" 2>/dev/null || echo "")
-        if [ "$ppid_field" = "$SERVER_PID" ]; then
-            cmd=$(tr '\0' ' ' < "$child/cmdline" 2>/dev/null || echo "")
-            case "$cmd" in
-                *serve/__main__.py*) real_python=$cpid; break ;;
-            esac
-        fi
+# Quick early-exit check: capture the python PID. On Linux $! is python
+# itself; on macOS the bash + python wrapper sometimes gives the wrapper
+# PID, so we wait 2s and re-resolve via pgrep + ps-cmdline match.
+# Cross-platform: works with /proc on Linux or without on macOS.
+sleep 2
+resolved=""
+if ps -p "$SERVER_PID" -o args= 2>/dev/null | grep -q "serve/__main__.py"; then
+    resolved="$SERVER_PID"
+else
+    for p in $(pgrep -f "serve/__main__.py" 2>/dev/null || true); do
+        cmd=$(ps -p "$p" -o args= 2>/dev/null || true)
+        case "$cmd" in
+            *serve/__main__.py*"$K3_MODEL_DIR"*)
+                resolved="$p"
+                ;;
+            *"serve/__main__.py"*) resolved="$p" ;;
+        esac
+        [ -n "$resolved" ] && break
     done
 fi
-if [ -z "$real_python" ]; then
-    warn "captured PID $SERVER_PID has no python child; surfacing log tail"
+if [ -n "$resolved" ]; then
+    if [ "$resolved" != "$SERVER_PID" ]; then
+        warn "captured PID $SERVER_PID is a wrapper; real server PID: $resolved"
+    fi
+    echo "$resolved" > "$K3_DIR/server.pid"
+    SERVER_PID="$resolved"
+else
+    warn "no serve/__main__.py process found after 2s; surfacing log tail"
     tail -n 20 "$K3_DIR/server.log" 2>/dev/null | sed "s/^/    /" || true
-fi
-
-# Defensive: if for some reason the captured PID isn't the server
-# (e.g. python printed an error and forked something else), discover
-# the real one. pgrep is racy; the /proc/$p/cwd symlink check avoids
-# catching a serve running from some other path.
-sleep 1
-if ! ps -p "$SERVER_PID" -o args= 2>/dev/null | grep -q "serve/__main__.py"; then
-    warn "captured PID $SERVER_PID isn't python; discovering the real one"
-    for p in $(pgrep -f "serve/__main__.py" 2>/dev/null); do
-        if [ -r "/proc/$p/cwd" ]; then
-            cw=$(readlink "/proc/$p/cwd" 2>/dev/null || true)
-            case "$cw" in
-                "$K3_DIR"*) echo "$p" > "$K3_DIR/server.pid"; SERVER_PID=$p; ok "real server PID: $SERVER_PID"; break ;;
-            esac
-        fi
-    done
 fi
 
 # If the previous run left a non-empty log, surface the last few lines
