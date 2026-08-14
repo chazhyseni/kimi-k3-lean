@@ -1,0 +1,55 @@
+# kimi-k3-lean network deployment — Caddy reverse proxy.
+#
+# Defaults to a Caddy-internal TLS cert (good for LAN pilots). For a
+# public-facing deployment, swap `tls internal` for your real cert.
+#
+# Routes:
+#   /                  -> Open WebUI (chat UI; optional)
+#   /llm/*             -> gateway    (auth, then router)
+#   /v1/*              -> gateway    (passthrough, OpenAI-style)
+#   /client/*          -> static dir (laptop installer)
+#
+# Toggle Open WebUI by setting COMPOSE_PROFILES=webui when bringing
+# the stack up.
+
+{$SERVER_NAME:localhost} {
+    tls {$TLS_MODE:internal} {
+        on_demand
+    }
+
+    encode zstd gzip
+
+    # /llm/* -> gateway -> router -> model. Strip the /llm prefix on the way.
+    @llm path /llm/*
+    handle @llm {
+        uri strip_prefix /llm
+        reverse_proxy gateway:8080
+    }
+
+    # /v1/* -> gateway. Lets clients hit the OpenAI-style root URL
+    # without a /llm prefix.
+    @v1 path /v1 /v1/*
+    handle @v1 {
+        reverse_proxy gateway:8080
+    }
+
+    # /healthz and /api/models and /client/* are public, no auth.
+    @client path /client /client/*
+    handle @client {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, OPTIONS"
+        reverse_proxy workspace:8080
+    }
+
+    @api_models path /api/models /api/models/
+    handle @api_models {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy workspace:8080
+    }
+
+    # Everything else: optional chat UI (Open WebUI), served only if its
+    # container is up.
+    handle {
+        reverse_proxy webui:8080
+    }
+}

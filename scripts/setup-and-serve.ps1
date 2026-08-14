@@ -7,7 +7,6 @@ Usage:
   .\scripts\setup-and-serve.ps1 -DownloadOnly         just download weights
   .\scripts\setup-and-serve.ps1 -ConvertOnly          just convert the checkpoint
   .\scripts\setup-and-serve.ps1 -ServeOnly            just start the server
-  .\scripts\setup-and-serve.ps1 -DryRun              build only, fake-engine mode (no model needed)
 
 Environment variables:
   $env:K3_MODEL_DIR    checkpoint directory (default: .\checkpoints\k3)
@@ -27,8 +26,7 @@ param(
     [switch]$BuildOnly,
     [switch]$DownloadOnly,
     [switch]$ConvertOnly,
-    [switch]$ServeOnly,
-    [switch]$DryRun
+    [switch]$ServeOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -140,7 +138,6 @@ function Serve($modelPath) {
                   "--port", "$K3_PORT",
                   "--max-tokens", "$K3_MAX_TOKENS")
         if ($K3_API_KEY) { $args += @("--api-key", $K3_API_KEY) }
-        if ($DryRun)     { $args += @("--dry-run") }
 
         $env:PATH = "$REPO_ROOT\bin;$env:PATH"
         & python serve\__main__.py @args
@@ -150,15 +147,6 @@ function Serve($modelPath) {
 }
 
 # --------------------------------------------------------------- workflow
-
-if ($DryRun) {
-    Build
-    if (-not (Test-Path "C:\tmp\k3-lean-fake")) {
-        New-Item -ItemType Directory -Force -Path "C:\tmp\k3-lean-fake" | Out-Null
-    }
-    Serve "C:\tmp\k3-lean-fake"
-    exit 0
-}
 
 if (-not $ServeOnly) {
     Build

@@ -7,7 +7,11 @@
 #   ./scripts/setup-and-serve.sh --download-only    download weights only
 #   ./scripts/setup-and-serve.sh --convert-only     convert checkpoint only
 #   ./scripts/setup-and-serve.sh --serve-only       start the server
-#   ./scripts/setup-and-serve.sh --dry-run         build + start server with FakeEngine (no model needed)
+#   ./scripts/setup-and-serve.sh --help
+#   ./scripts/setup-and-serve.sh --build-only       build libk3.so + the CLI
+#   ./scripts/setup-and-serve.sh --download-only    download weights
+#   ./scripts/setup-and-serve.sh --convert-only     convert the checkpoint
+#   ./scripts/setup-and-serve.sh --serve-only       start the server (assumes model + build exist)
 #   ./scripts/setup-and-serve.sh --install-deps    install OS-level prerequisites first
 #
 # Environment variables:
@@ -50,7 +54,6 @@ BUILD_ONLY=0
 DOWNLOAD_ONLY=0
 CONVERT_ONLY=0
 SERVE_ONLY=0
-DRY_RUN=0
 INSTALL_DEPS=0
 
 # ----------------------- logging -----------------------
@@ -71,7 +74,6 @@ while [ $# -gt 0 ]; do
         --download-only)  DOWNLOAD_ONLY=1; shift ;;
         --convert-only)   CONVERT_ONLY=1; shift ;;
         --serve-only)     SERVE_ONLY=1; shift ;;
-        --dry-run)        DRY_RUN=1; shift ;;
         --install-deps)   INSTALL_DEPS=1; shift ;;
         -h|--help)        usage ;;
         *)                die "unknown flag: $1" 5 ;;
@@ -269,7 +271,6 @@ serve() {
     )
     [ -n "${K3_API_KEY}" ]      && args+=("--api-key" "${K3_API_KEY}")
     [ -n "${K3_LOG_REQUESTS}" ] && args+=("--log-requests")
-    [ "${DRY_RUN}" -eq 1 ]      && args+=("--dry-run")
 
     cd "${REPO_ROOT}"
     exec env \
@@ -283,15 +284,6 @@ serve() {
 if [ "${INSTALL_DEPS}" -eq 1 ]; then
     install_deps
     note "rerun this script without --install-deps to continue setup"
-    exit 0
-fi
-
-# Dry-run: build + serve fake. No download, no convert, no real model.
-if [ "${DRY_RUN}" -eq 1 ]; then
-    require_tool python3
-    build
-    mkdir -p /tmp/k3-lean-fake
-    serve /tmp/k3-lean-fake
     exit 0
 fi
 

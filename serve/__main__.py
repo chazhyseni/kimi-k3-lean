@@ -93,9 +93,6 @@ examples:
                         "(default 256)")
     s.add_argument("--log-requests", action="store_true",
                    help="log each request to stderr (default: quiet)")
-    s.add_argument("--dry-run", action="store_true",
-                   help="don't open the C engine; use a fake that returns "
-                        "canned responses (for HTTP-layer testing only)")
 
     args = ap.parse_args(argv)
 
@@ -106,33 +103,21 @@ examples:
 
     model_id = args.model_id or model.name
 
-    # --dry-run lets you exercise the HTTP server without the C engine.
-    # Useful for CI smoke tests and for getting the harness wiring right
-    # before committing 982 GB of model data. The fake engine is a stand-in
-    # that returns canned responses.
-    if getattr(args, "dry_run", False):
-        from serve.fake_engine import FakeEngine
-        engine = FakeEngine(
-            model_path=str(model),
-            n_layers=93,
-            vocab_size=163840,
+    try:
+        engine = Engine(
+            str(model),
+            preset=args.preset,
+            trunk_dir=args.trunk_dir,
+            config_path=args.config,
+            tok_dir=args.tok_dir,
+            layers=args.layers,
+            cache_gb=args.cache_gb,
+            trunk_gb=args.trunk_gb,
+            incremental=not args.no_incremental,
         )
-    else:
-        try:
-            engine = Engine(
-                str(model),
-                preset=args.preset,
-                trunk_dir=args.trunk_dir,
-                config_path=args.config,
-                tok_dir=args.tok_dir,
-                layers=args.layers,
-                cache_gb=args.cache_gb,
-                trunk_gb=args.trunk_gb,
-                incremental=not args.no_incremental,
-            )
-        except EngineError as e:
-            print(f"engine open failed: {e}", file=sys.stderr)
-            return 1
+    except EngineError as e:
+        print(f"engine open failed: {e}", file=sys.stderr)
+        return 1
 
     print(f"kimi-k3-lean OpenAI server")
     print(f"  model    {model_id} — {engine.model_id}, "

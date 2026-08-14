@@ -1,0 +1,176 @@
+# kimi-k3-lean network deployment.
+#
+# Bring-up:
+#   cd deploy && docker compose --profile with-models up -d --build
+#
+# Stand-alone (gateway only, for clients hitting a single host):
+#   docker compose up gateway caddy router workspace -d --build
+#
+# Profiles:
+#   with-k3       build the k3 model image and mount ./checkpoints/k3
+#   with-linear   build a linear-shaped backend (the K3 image is the same;
+#                 just point MODEL_URL at whichever checkpoint you have)
+#   with-webui    add Open WebUI for a browser chat UI
+#
+# The "default" up brings up: gateway, router, workspace, caddy — no model.
+# Add `--profile with-k3` when you've downloaded the weights.
+
+services:
+  router:
+    build: ./router
+    container_name: k3l-router
+    restart: unless-stopped
+    environment:
+      MODELS: |
+        {
+          "kimi-k3": "http://k3:8080/v1"
+        }
+      DEFAULT_MODEL: kimi-k3
+    expose:
+      - "8080"
+    networks:
+      - k3l
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  gateway:
+    build: ./gateway
+    container_name: k3l-gateway
+    restart: unless-stopped
+    environment:
+      UPSTREAM_BASE_URL: http://router:8080/v1
+      UPSTREAM_API_KEY: ${INTERNAL_API_KEY:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      MAX_REQUEST_BYTES: ${MAX_REQUEST_BYTES:-10485760}
+    depends_on:
+      router:
+        condition: service_healthy
+    expose:
+      - "8080"
+    networks:
+      - k3l
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  workspace:
+    build: ./workspace
+    container_name: k3l-workspace
+    restart: unless-stopped
+    environment:
+      MODELS: |
+        {
+          "kimi-k3": "Kimi K3 (2.78T params, VQ3R experts)"
+        }
+      STATIC_DIR: /srv/llm-client
+    volumes:
+      - ./static:/srv/llm-client:ro
+    expose:
+      - "8080"
+    networks:
+      - k3l
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: k3l-caddy
+    restart: unless-stopped
+    ports:
+      # Only 80 and 443 are exposed to the LAN. Everything else stays
+      # inside the docker network.
+      - "80:80"
+      - "443:443"
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      TLS_MODE: ${TLS_MODE:-internal}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      gateway:
+        condition: service_healthy
+      workspace:
+        condition: service_healthy
+    networks:
+      - k3l
+
+  # ---------------------------------------------------------------------
+  # Model backend — only started with `--profile with-k3`.
+  # ---------------------------------------------------------------------
+  k3:
+    profiles: ["with-k3"]
+    build: ./model
+    container_name: k3l-model-k3
+    restart: unless-stopped
+    environment:
+      K3_HOST: 0.0.0.0
+      K3_PORT: 8080
+      K3_API_KEY: ${MODEL_API_KEY:-${INTERNAL_API_KEY}}
+      K3_PRESET: ${K3_PRESET:-auto}
+      K3_LOG_REQUESTS: "1"
+    volumes:
+      # Mount your downloaded/converted checkpoint at /data.
+      - ./checkpoints/k3:/data:ro
+    deploy:
+      resources:
+        limits:
+          # Adjust for your host. K3 expert weights are disk-resident;
+          # only the trunk + LRU cache live in RAM.
+          memory: ${K3_MEMORY_LIMIT:-8G}
+    expose:
+      - "8080"
+    networks:
+      - k3l
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # The first load of K3 takes 10-30s; give it room.
+      start_period: 60s
+
+  # ---------------------------------------------------------------------
+  # Optional chat UI (browser). Bring up with `--profile with-webui`.
+  # ---------------------------------------------------------------------
+  webui:
+    profiles: ["with-webui"]
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: k3l-webui
+    restart: unless-stopped
+    environment:
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "false"      # admin creates accounts manually
+      OPENAI_API_BASE_URLS: "http://gateway:8080/v1"
+      OPENAI_API_KEYS: "${INTERNAL_API_KEY}"
+      WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY:-change-me-in-env}"
+      WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL:-admin@local}"
+      WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD:-change-me-in-env}"
+    volumes:
+      - webui-data:/app/backend/data
+    expose:
+      - "8080"
+    networks:
+      - k3l
+
+networks:
+  k3l:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:
+  webui-data:
