@@ -513,6 +513,48 @@ _k3_stack() {
     esac
 }
 
+_k3_update() {
+    # Pull HEAD from origin and refresh the launcher script in ~/.local/bin.
+    # Refuses if a server is running in this K3_DIR (would lose the
+    # in-flight changes when bootstrap re-resets --hard).
+    local our_repo repo_root bin_target
+    our_repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    repo_root=$(_k3_find_repo 2>/dev/null || echo "$our_repo")
+    bin_target="${BASH_SOURCE[0]}"
+    if [ ! -d "$repo_root/.git" ]; then
+        warn "no .git at $repo_root; can't update in place. Re-run bootstrap."
+        return 1
+    fi
+    # Refuse if our server is running (its PID file would be overwritten)
+    if [ -f "$repo_root/server.pid" ]; then
+        local spid
+        spid=$(cat "$repo_root/server.pid" 2>/dev/null || echo "")
+        if [ -n "$spid" ] && kill -0 "$spid" 2>/dev/null; then
+            warn "server PID $spid still running. Stop it first: kimi-k3-lean stop"
+            return 1
+        fi
+    fi
+    ok "pulling HEAD from origin"
+    if ! git -C "$repo_root" fetch --depth 1 origin main 2>&1 | sed "s/^/    /"; then
+        warn "git fetch failed; check network"
+        return 1
+    fi
+    if ! git -C "$repo_root" reset --hard origin/main 2>&1 | sed "s/^/    /"; then
+        warn "git reset failed; working tree may be dirty. Try: cd $repo_root && git status"
+        return 1
+    fi
+    local new_head
+    new_head=$(git -C "$repo_root" rev-parse --short HEAD)
+    ok "now at HEAD $new_head"
+    # Refresh the launcher installed in ~/.local/bin
+    if [ "$bin_target" != "$HOME/.local/bin/kimi-k3-lean" ]; then
+        if cp "$repo_root/kimi-k3-lean" "$HOME/.local/bin/kimi-k3-lean" 2>/dev/null; then
+            chmod +x "$HOME/.local/bin/kimi-k3-lean"
+            ok "launcher refreshed: $HOME/.local/bin/kimi-k3-lean"
+        fi
+    fi
+}
+
 _k3_install() {
     # If this launcher is in ~/.local/bin, the install is complete.
     # Otherwise it was run from the repo; tell the user how to install.
@@ -556,6 +598,7 @@ _k3_help() {
     echo "  stack status       docker compose ps"
     echo "  stack logs [SVC]   tail compose logs"
     echo "  install            print install hints"
+    echo "  update             git pull origin/main and refresh the installed launcher"
     echo "  uninstall          stop server, remove launcher"
     echo "  help               this"
 }
@@ -571,6 +614,7 @@ case "$cmd" in
     config)   _k3_config "$@" ;;
     stack)    _k3_stack "$@" ;;
     install)  _k3_install ;;
+    update)   _k3_update ;;
     uninstall) _k3_uninstall ;;
     help|--help|-h) _k3_help ;;
     *)        echo "unknown subcommand: $cmd"; _k3_help; exit 2 ;;
