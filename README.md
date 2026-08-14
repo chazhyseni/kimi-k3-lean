@@ -37,14 +37,19 @@ to a Python server via ctypes. That library is the seam.
 
 ## Quick start
 
-One command, from anywhere:
+Two commands depending on your shell:
 
 ```
+# Linux / macOS (bash, zsh, fish — anything with `curl | bash`)
 curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
+
+# Windows (PowerShell 5.1+)
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.ps1).Content
 ```
 
-That installs the `kimi-k3-lean` CLI to `~/.local/bin/`. From then on,
-the only command you ever need is:
+Both install the `kimi-k3-lean` CLI to a PATH-friendly location
+(`~/.local/bin/` on POSIX, `%LOCALAPPDATA%\Programs\kimi-k3-lean`
+on Windows). From then on, the only command you ever need is:
 
 ```
 kimi-k3-lean serve
@@ -53,8 +58,13 @@ kimi-k3-lean serve
 It starts the OpenAI server on `http://127.0.0.1:8080`. Test it:
 
 ```
+# POSIX
 TOKEN=$(grep ^K3_API_KEY= ~/.kimi-k3-lean/server.env | cut -d= -f2)
 curl http://127.0.0.1:8080/v1/models -H "Authorization: Bearer $TOKEN"
+
+# PowerShell
+$Token = (Get-Content ~/.kimi-k3-lean/server.env | Select-String '^K3_API_KEY=').ToString().Split('=',2)[1]
+Invoke-RestMethod http://127.0.0.1:8080/v1/models -Headers @{Authorization = "Bearer $Token"}
 ```
 
 ### What `bootstrap.sh` does

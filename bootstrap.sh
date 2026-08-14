@@ -62,7 +62,15 @@ K3_PORT="${K3_PORT:-8080}"
 K3_HOST="${K3_HOST:-127.0.0.1}"
 K3_PRESET="${K3_PRESET:-auto}"
 K3_MODEL_DIR="${K3_MODEL_DIR:-$K3_DIR/checkpoints/k3}"
-K3_API_KEY="${K3_API_KEY:-$(openssl rand -hex 16 2>/dev/null || echo "k3-$(date +%s)-$$")}"
+# Cross-platform random hex (POSIX has /dev/urandom; Windows has none).
+if [ -r /dev/urandom ]; then
+    _RAND_HEX_DEFAULT="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+elif command -v openssl >/dev/null 2>&1; then
+    _RAND_HEX_DEFAULT="$(openssl rand -hex 16 2>/dev/null)"
+else
+    _RAND_HEX_DEFAULT="k3-$(date +%s)-$$"
+fi
+K3_API_KEY="${K3_API_KEY:-$_RAND_HEX_DEFAULT}"
 K3_MODEL_NAME="${K3_MODEL_NAME:-kimi-k3}"
 
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*" >&2; }
@@ -70,6 +78,39 @@ ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33m  !\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m==> ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing: $1  ($2)"; }
+
+# ----- OS / Python detection (cross-platform) -----
+case "$(uname -s 2>/dev/null)" in
+    Linux|GNU*)  K3_OS=linux  ;;
+    Darwin)     K3_OS=macos  ;;
+    MINGW*|MSYS*|CYGWIN*) K3_OS=windows ;;
+    *)          K3_OS=other  ;;
+esac
+
+if command -v python3 >/dev/null 2>&1; then
+    K3_PY=python3
+elif command -v python >/dev/null 2>&1; then
+    K3_PY=python
+else
+    die "Python 3.11+ not found; install it (apt/dnf/brew/winget) first"
+fi
+K3_PY_VERSION=$($K3_PY -c "import sys;print('%d.%d'%sys.version_info[:2])")
+case "$K3_PY_VERSION" in
+    3.1[1-9]|3.[2-9]*) : ;;
+    *) die "Python $K3_PY_VERSION found; need 3.11+" ;;
+esac
+ok "python: $K3_PY $K3_PY_VERSION  ($K3_OS)"
+
+# CPU count with multiple fallbacks (Linux, macOS, git-bash on Windows).
+if command -v nproc >/dev/null 2>&1; then
+    K3_NPROC=$(nproc)
+elif [ -r /proc/cpuinfo ]; then
+    K3_NPROC=$(grep -c ^processor /proc/cpuinfo)
+elif command -v sysctl >/dev/null 2>&1; then
+    K3_NPROC=$(sysctl -n hw.ncpu)
+else
+    K3_NPROC=2
+fi
 
 # ----- uninstall path -----
 if [ "${K3_UNINSTALL:-0}" = "1" ]; then
@@ -91,25 +132,13 @@ if [ "${K3_UNINSTALL:-0}" = "1" ]; then
     exit 0
 fi
 
-# ----- 1. platform detect -----
-OS="$(uname -s)"
-case "$OS" in
-    Linux)  PLATFORM=linux ;;
-    Darwin) PLATFORM=macos ;;
-    *)      die "unsupported platform: $OS. Use bootstrap.ps1 on Windows." ;;
-esac
-ok "platform: $PLATFORM"
-
-need git   "install git first"
-need python3 "install Python 3.11+ first"
-
-# check python version
-pyv=$(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo "0.0")
-case "$pyv" in
-    3.1[1-9]|3.[2-9].*|3.[1-9][0-9].*) ;;  # 3.11+
-    *) die "Python $pyv found; need 3.11+." ;;
-esac
-ok "python $pyv"
+# ----- 1. platform detect (already done above) -----
+# K3_OS / K3_PY / K3_PY_VERSION / K3_NPROC are set in the config section.
+# git is the only other prereq; check it now since the platform check
+# already happened.
+need git "install git first (apt/dnf/brew/winget/git-for-windows)"
+PLATFORM="$K3_OS"
+ok "platform: $PLATFORM (python: $K3_PY $K3_PY_VERSION, nproc: $K3_NPROC)"
 
 # ----- 2. clone or update -----
 if [ -d "$K3_DIR/.git" ]; then
@@ -133,7 +162,7 @@ if [ "${K3_SKIP_BUILD:-0}" = "1" ]; then
     ok "skipping build (K3_SKIP_BUILD=1)"
 elif [ ! -f bin/libk3.so ] || [ src -nt bin/libk3.so ] || [ include -nt bin/libk3.so ]; then
     say "building libk3.so + bin/k3"
-    LDFLAGS="-lm -pthread" make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" all
+    LDFLAGS="-lm -pthread" make -j"$K3_NPROC" all
     ok "built"
 else
     ok "build cached"
@@ -196,7 +225,7 @@ chmod 600 "$K3_DIR/server.env"
 # users watching `tail -f`). The backgrounded python inherits its
 # stdout/stderr from bootstrap, then bootstrap waits below for the
 # listener to come up before exiting.
-python3 -u serve/__main__.py "$K3_MODEL_DIR" \
+$K3_PY -u serve/__main__.py "$K3_MODEL_DIR" \
     --host "$K3_HOST" --port "$K3_PORT" --preset "$K3_PRESET" \
     --api-key "$K3_API_KEY" --model-id "$K3_MODEL_NAME" \
     >>"$K3_DIR/server.log" 2>&1 </dev/null &
@@ -277,7 +306,7 @@ hermes_configure() {
     # which is neither JSON nor what `json.load` expects. Parse it line by
     # line, keep just "- word" tokens, dedupe, append $K3_MODEL_NAME.
     new=$(hermes config get providers.ollama-launch.models 2>/dev/null | \
-        python3 -c "
+        $K3_PY -c "
 import re, json, sys
 items = []
 for line in sys.stdin:
@@ -311,52 +340,21 @@ print(json.dumps(items))
         esac
     fi
 }
-hermes_configure
 
-# ----- 6b. install the launcher to ~/.local/bin/ so the user can run
-# `kimi-k3-lean serve` from any directory afterwards. Idempotent:
-# a symlink at the target is replaced; otherwise it's a fresh copy.
-K3_BIN_DIR="$HOME/.local/bin"
-K3_BIN="$K3_BIN_DIR/kimi-k3-lean"
-mkdir -p "$K3_BIN_DIR" 2>/dev/null || true
-if [ -d "$K3_BIN_DIR" ] && [ -w "$K3_BIN_DIR" ]; then
-    rm -f "$K3_BIN"
-    cp "$K3_DIR/kimi-k3-lean" "$K3_BIN" 2>/dev/null &&         chmod +x "$K3_BIN" &&         ok "launcher installed: $K3_BIN" ||         warn "could not install launcher to $K3_BIN (run with --user or fix perms)"
-    case ":$PATH:" in
-        *":$K3_BIN_DIR:"*) ok "PATH already includes $K3_BIN_DIR" ;;
-        *) warn "$K3_BIN_DIR is not on PATH; add  export PATH=$K3_BIN_DIR:\$PATH  to your shell rc";;
-    esac
+# ----- 6. install the launcher -----
+# The launcher goes into ~/.local/bin/ on Linux/macOS (PATH-friendly on
+# both; works out of the box on any machine that follows XDG Base Dir).
+# On Windows under git-bash, this is still usable but the proper Windows
+# installer is bootstrap.ps1 (drop into %LOCALAPPDATA%\Programs or similar).
+if [ "$K3_OS" = "windows" ]; then
+    # git-bash on Windows: ~/.local/bin is fine for command-line use,
+    # but for full Windows integration, run bootstrap.ps1 instead.
+    K3_BIN_DIR="$HOME/.local/bin"
+    warn "Windows detected: bootstrap.sh installed the launcher for git-bash use."
+    warn "For full PowerShell integration, also run bootstrap.ps1."
 else
-    warn "skipped launcher install (no write access to $K3_BIN_DIR)"
+    K3_BIN_DIR="$HOME/.local/bin"
 fi
-
-# ----- 7. hand-off -----
-cat >&2 <<EOF
-NewShell "[1;36mIn another terminal (or after 'export PATH=$K3_BIN_DIR:\$PATH'):[0m"    "  kimi-k3-lean status     # PID + URL"
-NewShell "  kimi-k3-lean models     # curl /v1/models"
-NewShell "  kimi-k3-lean chat -m 'hi'"
-NewShell "  kimi-k3-lean stop"
-NewShell ""
-NewShell "Or test directly:"
-NewShell "  curl -s http://127.0.0.1:$K3_PORT/v1/models -H 'Authorization: Bearer ...'"
-NewShell ""
-NewShell "[1;36m==> done[0m"
-
-Server:      http://$K3_HOST:$K3_PORT
-API key:     (in $K3_DIR/server.env, mode 0600)
-Model:       $K3_MODEL_NAME   (registered with Hermes as default)
-Launcher:    $K3_BIN
-Test it:     see README section "Test it" for five real curl demos
-Stop:        kill $(cat $K3_DIR/server.pid)
-Tail log:    tail -f $K3_DIR/server.log
-Download K3: K3_DIR=$K3_DIR bash $K3_DIR/scripts/setup-and-serve.sh --download-only
-Remove:      curl ... | K3_UNINSTALL=1 bash
-
-# ----- 7. install the launcher to ~/.local/bin/ -----
-# After bootstrap the user should never have to think about PATH,
-# LD_LIBRARY_PATH, or which python to call. Drop the `kimi-k3-lean`
-# launcher into ~/.local/bin/ (idempotent; symlink or copy replaces).
-K3_BIN_DIR="$HOME/.local/bin"
 K3_BIN="$K3_BIN_DIR/kimi-k3-lean"
 mkdir -p "$K3_BIN_DIR" 2>/dev/null || true
 if [ -d "$K3_BIN_DIR" ] && [ -w "$K3_BIN_DIR" ]; then
@@ -376,7 +374,7 @@ else
     warn "skipped launcher install (no write access to $K3_BIN_DIR)"
 fi
 
-# ----- 8. hand-off -----
+# ----- 7. hand-off -----
 cat >&2 <<EOF
 done: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -385,12 +383,13 @@ done: $(date -u +%Y-%m-%dT%H:%M:%SZ)
   Model:    $K3_MODEL_NAME
   Log:      $K3_DIR/server.log
   Token:    (in $K3_DIR/server.env, mode 0600)
+  Platform: $K3_OS (python: $K3_PY)
 
 After bootstrap:
 
   1. test with curl right now:
         TOKEN=$(grep ^K3_API_KEY= $K3_DIR/server.env | cut -d= -f2)
-        curl -s http://$K3_HOST:$K3_PORT/v1/models -H "Authorization: Bearer $TOKEN"
+        curl -s http://$K3_HOST:$K3_PORT/v1/models -H "Authorization: Bearer \$TOKEN"
 
   2. or use the launcher (after adding $K3_BIN_DIR to PATH if needed):
         kimi-k3-lean status     # PID + URL
@@ -401,16 +400,19 @@ After bootstrap:
   3. download the real Kimi K3 (~982 GB, ~4 hours):
         K3_DIR=$K3_DIR bash $K3_DIR/scripts/setup-and-serve.sh --download-only
 
-  4. uninstall:
+  4. full LAN stack with Open WebUI:
+        kimi-k3-lean stack up --webui
+
+  5. uninstall:
         curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | K3_UNINSTALL=1 bash
 
-If you saw "warn: server didn`''t respond" above, the model wasn`''t on disk.
+If you saw "warn: server didn't respond" above, the model wasn't on disk.
 The HTTP scaffold and the launcher are in place; the round-trip will
 start working as soon as the K3 weights finish downloading.
 
-The article`''s tiny_k3.bin fixture does NOT give working chat completions
+The article's tiny_k3.bin fixture does NOT give working chat completions
 (it has vocab=256; the real tokenizer has vocab=163,584). The fixture only
-proves the C engine`''s 3-GATE oracle passes against the reference.
+proves the C engine's 3-GATE oracle passes against the reference.
 Downloading the real K3 is the only path to a working chat endpoint.
 
 EOF

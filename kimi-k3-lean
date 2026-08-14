@@ -26,6 +26,16 @@
 
 set -euo pipefail
 
+# Cross-platform Python detection (python3 on POSIX, python on Windows).
+if command -v python3 >/dev/null 2>&1; then
+    K3_PY=python3
+elif command -v python >/dev/null 2>&1; then
+    K3_PY=python
+else
+    echo "kimi-k3-lean: python3 / python not found; install Python 3.11+" >&2
+    exit 1
+fi
+
 # ----- finding the repo -----
 _k3_find_repo() {
     # 1. explicit K3_HOME wins
@@ -142,10 +152,34 @@ _k3_stop() {
         fi
         rm -f "$K3_HOME/server.pid"
     fi
-    # also free the port if anything else is bound
-    if command -v fuser >/dev/null 2>&1; then
-        fuser -k "${K3_PORT}/tcp" 2>/dev/null || true
-    fi
+    # Also free the port if anything else is bound. Cross-platform:
+    #   Linux: ss -ltnp + kill (or lsof)
+    #   macOS: lsof -ti tcp:PORT | xargs kill
+    #   Windows (git-bash): netstat -ano + taskkill
+    _k3_kill_port() {
+        local port="$1"
+        if command -v ss >/dev/null 2>&1; then
+            # Linux + modern macOS
+            local pids
+            pids=$(ss -ltnp "sport = :$port" 2>/dev/null \
+                | grep -oP 'pid=\K[0-9]+' | sort -u || true)
+            [ -n "$pids" ] && kill $pids 2>/dev/null || true
+        elif command -v lsof >/dev/null 2>&1; then
+            # macOS / BSDs
+            local pids
+            pids=$(lsof -ti "tcp:$port" 2>/dev/null || true)
+            [ -n "$pids" ] && kill $pids 2>/dev/null || true
+        elif command -v fuser >/dev/null 2>&1; then
+            # Older Linux distros
+            fuser -k "${port}/tcp" 2>/dev/null || true
+        elif command -v netstat >/dev/null 2>&1 && command -v taskkill >/dev/null 2>&1; then
+            # Windows (git-bash has netstat via /c/Windows; taskkill for the kill)
+            local pid
+            pid=$(netstat -ano 2>/dev/null | grep ":$port " | awk '{print $NF}' | head -1)
+            [ -n "$pid" ] && taskkill //F //PID "$pid" 2>/dev/null || true
+        fi
+    }
+    _k3_kill_port "$K3_PORT"
     echo "stopped."
 }
 
@@ -166,7 +200,15 @@ EOF
         mkdir -p "$K3_MODEL"
     fi
     _k3_stop  # idempotent
-    : "${K3_API_KEY:=$(openssl rand -hex 16 2>/dev/null || echo "k3-$$")}"
+    # Cross-platform random hex: /dev/urandom on POSIX, CryptoAPI on
+    # Windows. Fall back to time-based if neither available.
+    if [ -r /dev/urandom ]; then
+        : "${K3_API_KEY:=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
+    elif command -v openssl >/dev/null 2>&1; then
+        : "${K3_API_KEY:=$(openssl rand -hex 16 2>/dev/null || echo "k3-$$")}"
+    else
+        : "${K3_API_KEY:=k3-$(date +%s)-$$}"
+    fi
 
     # write the env so future shells / uninstall know the token
     cat > "$K3_CONF" <<EOF
@@ -180,9 +222,13 @@ EOF
     chmod 600 "$K3_CONF"
 
     cd "$K3_HOME"
-    # ensure libk3.so is on LD_LIBRARY_PATH even if the user moved the launcher
-    export LD_LIBRARY_PATH="$K3_HOME/bin:${LD_LIBRARY_PATH:-}"
-    python3 -u serve/__main__.py "$K3_MODEL" \
+    # Ensure libk3.so is on LD_LIBRARY_PATH even if the user moved the launcher.
+    # On Windows this is a no-op (libk3.dll is loaded via PATH on Windows).
+    case "$(uname -s 2>/dev/null)" in
+        MINGW*|MSYS*|CYGWIN*) : ;;  # Windows: rely on PATH for .dll discovery
+        *) export LD_LIBRARY_PATH="$K3_HOME/bin:${LD_LIBRARY_PATH:-}" ;;
+    esac
+    "$K3_PY" -u serve/__main__.py "$K3_MODEL" \
         --host "$K3_HOST" --port "$K3_PORT" \
         --api-key "$K3_API_KEY" --model-id "$K3_MODEL_NAME" \
         "$@" \
@@ -237,7 +283,7 @@ _k3_chat() {
     : "${message:?no --message given}"
     : "${K3_API_KEY:?no token}"
     local payload
-    payload=$(python3 -c "
+    payload=$("$K3_PY" -c "
 import json,sys
 print(json.dumps({'model':sys.argv[1],'messages':[{'role':'user','content':sys.argv[2]}],'max_tokens':256,'stream': bool(int(sys.argv[3]))}))
 " "$model" "$message" "$stream")
@@ -261,7 +307,18 @@ _k3_fetch() {
 _k3_doctor() {
     echo "== kimi-k3-lean doctor =="
     echo "repo:       $K3_HOME"
-    echo "engine:     $(test -f "$K3_HOME/bin/libk3.so" && file "$K3_HOME/bin/libk3.so" | head -1 || echo MISSING)"
+    # file(1) doesn't exist on Windows; fall back to byte-count + magic check.
+    if [ -f "$K3_HOME/bin/libk3.so" ] || [ -f "$K3_HOME/bin/libk3.dylib" ] || [ -f "$K3_HOME/bin/libk3.dll" ]; then
+        local lib
+        for lib in libk3.so libk3.dylib libk3.dll; do
+            if [ -f "$K3_HOME/bin/$lib" ]; then
+                echo "engine:     $K3_HOME/bin/$lib ($(wc -c < "$K3_HOME/bin/$lib" 2>/dev/null) bytes)"
+                break
+            fi
+        done
+    else
+        echo "engine:     MISSING (build via make or bootstrap.sh)"
+    fi
     echo "model dir:  ${K3_MODEL:-NOT SET}"
     if [ -n "$K3_MODEL" ] && [ -d "$K3_MODEL" ]; then
         echo "  contains: $(ls "$K3_MODEL" | head -3 | tr '\n' ' ')"
@@ -302,7 +359,7 @@ EOF
     rm -f "$K3_BIN"  # symlink this script lives at
     if command -v hermes >/dev/null; then
         hermes config unset model.base_url model.api_key model.default 2>/dev/null || true
-        hermes config set providers.ollama-launch.models "$(hermes config get providers.ollama-launch.models 2>/dev/null | grep -v -- "$K3_MODEL_NAME" | python3 -c 'import re,sys; print(repr([l.strip()[2:] for l in sys.stdin if l.strip().startswith("- ")])))')" 2>/dev/null || true
+        hermes config set providers.ollama-launch.models "$(hermes config get providers.ollama-launch.models 2>/dev/null | grep -v -- "$K3_MODEL_NAME" | "$K3_PY" -c 'import re,sys; print(repr([l.strip()[2:] for l in sys.stdin if l.strip().startswith("- ")])))')" 2>/dev/null || true
     fi
     echo "uninstalled. to fully remove the repo:  rm -rf $K3_HOME"
 }
