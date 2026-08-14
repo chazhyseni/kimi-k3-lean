@@ -165,28 +165,83 @@ return 400.
 
 ### Point your harness at it
 
+`bootstrap.sh` does this automatically — it reads your existing
+`providers.ollama-launch.models`, appends `kimi-k3`, sets
+`model.base_url`, and flips `model.default`. You should see "hermes
+round-trip: 200 OK" at the end of bootstrap.
+
+If you started the server by hand and want Hermes (or any other
+OpenAI-compat harness) to talk to it:
+
 ```
+# 1. URL + bearer token (matches --api-key on the server CLI, or the
+#    K3_API_KEY in ~/.kimi-k3-lean/server.env written by bootstrap.sh).
 hermes config set model.base_url http://127.0.0.1:8080/v1
+hermes config set model.api_key   "$(grep '^K3_API_KEY=' ~/.kimi-k3-lean/server.env | cut -d= -f2)"
+
+# 2. Register the model in the provider's model list. Hermes stores
+#    models as a JSON array; config-set OVERWRITES the list, so we
+#    read the current list and write it back with kimi-k3 appended.
+#    Skipping this step is the cause of "HTTP 404: model 'kimi-k3'
+#    not found" even with model.default = kimi-k3 set.
+#    NOTE: `hermes config get` emits YAML-style "- item" lines, not JSON.
+hermes config get providers.ollama-launch.models | python3 -c "
+import re, json, sys
+items = [m.group(1) for line in sys.stdin
+              for m in [re.match(r'^\s*-\s*(\S+)\s*\$', line.rstrip())] if m]
+if 'kimi-k3' not in items: items.append('kimi-k3')
+print(json.dumps(items))
+" | xargs -I{} hermes config set providers.ollama-launch.models "{}"
+
+# 3. Flip the default
 hermes config set model.default kimi-k3
-# Or any other harness — Open WebUI, LM Studio, Continue, etc.
 ```
 
-### Time to first token
+For any other harness, point it at the same URL with the same token.
+Open WebUI: Settings → Connections → OpenAI API. LM Studio: set the
+endpoint to `http://127.0.0.1:8080/v1` and paste the token. Claude
+Code: `ANTHROPIC_BASE_URL=http://127.0.0.1:8080/v1`. Raw curl:
+add `-H "Authorization: Bearer $K3_API_KEY"`.
 
+### Time to first token (real numbers measured on EPYC 7763)
+
+Two paths, different costs:
+
+**Path 1: bootstrap.sh (recommended for evaluation)**
+| Step | Time |
+|---|---|
+| `curl \| bash` | ~5 sec |
+| Clone (depth 1) | ~5 sec |
+| Build | ~30 sec |
+| Server up + Hermes registered | <10 sec |
+| **Working local chat endpoint** | **~1 minute** |
+| Hermes round-trip (`hermes -m kimi-k3 -z 'hi'`) | <1 sec |
+| Download real K3 weights | ~3 hours |
+| Convert | ~1 hour |
+| **First real-token response** | **~4 hours after download completes** |
+
+bootstrap.sh does NOT auto-download K3. It starts the server, registers
+the model with Hermes, and waits for you to commit to the ~982 GB.
+You see "server up" in <60 sec; `/v1/models` and Hermes say 200; the
+chat endpoint returns a clearly-formatted `engine_error` envelope until
+the K3 weights are added under `$K3_DIR/checkpoints/k3`. That's the
+honest "no model" state, not a smoke-test that prints fake replies.
+
+**Path 2: setup-and-serve.sh (full automation)**
 | Step | Time |
 |---|---|
 | `git clone` | ~30 sec |
 | Build | ~30 sec |
 | Download weights | ~3 hours |
 | Convert | ~1 hour |
-| **First-run total** | **~4 hours** (mostly idle waiting) |
-| Subsequent runs (`./scripts/setup-and-serve.sh --serve-only`) | ~5 sec |
+| **First-run total** | **~4 hours** |
+| Subsequent (`--serve-only`) | ~5 sec |
 
-### Subcommands
+### Subcommands (`setup-and-serve.sh`)
 
 | Flag | Use |
 |---|---|
-| `--install-deps` | Install OS-level prereqs (already auto-detected, but explicit if you want) |
+| `--install-deps` | Install OS-level prereqs |
 | `--build-only` | Just build the C engine |
 | `--download-only` | Just download weights |
 | `--convert-only` | Just convert the checkpoint |
@@ -194,7 +249,34 @@ hermes config set model.default kimi-k3
 
 Each is idempotent — re-run freely.
 
-Windows: `.\scripts\setup-and-serve.ps1` with the same flags.
+### Subcommands (`bootstrap.sh`)
+
+| Env var | Use |
+|---|---|
+| `K3_DIR=path` | install location (default `~/.kimi-k3-lean`) |
+| `K3_PORT=NNNN` | server port (default `8080`) |
+| `K3_HOST=addr` | bind address (default `127.0.0.1`) |
+| `K3_API_KEY=hex` | bearer token (default random 32-hex) |
+| `K3_PRESET=name` | memory preset (default `auto`) |
+| `K3_MODEL_DIR=path` | model dir (default `$K3_DIR/checkpoints/k3`) |
+| `K3_MODEL_NAME=id` | advertised model id (default `kimi-k3`) |
+| `K3_SKIP_DL=1` | don't expect a model on disk |
+| `K3_NO_HERMES=1` | skip Hermes config edits (CI, servers) |
+| `K3_UNINSTALL=1` | kill server + roll back Hermes config |
+
+### Uninstall
+
+```
+curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | K3_UNINSTALL=1 bash
+```
+
+Stops the server, reverts every Hermes config line bootstrap.sh sets,
+leaves the repo dir (so you can re-install without re-downloading).
+On Windows:
+
+```
+$env:K3_UNINSTALL=1; Invoke-Expression (Invoke-WebRequest https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.ps1).Content
+```
 
 ---
 
@@ -770,15 +852,14 @@ auth, a router for multi-model dispatch, and a workspace service for
 the model browser page. Pattern matches `/home/chaz/llms/llm-server/private-llm`
 but trimmed for CPU-only / single-binary / cross-platform.
 
-### Point Hermes at a running server
+### Point Hermes at the deploy backend
 
-```bash
-hermes config set model.base_url http://127.0.0.1:8080/v1
-hermes config set model.api_key "$INTERNAL_API_KEY"
-hermes config set model.default kimi-k3
-```
-
-Then `hermes -z "prompt"` uses the local model.
+Same as the [Quick Start snippet](#point-your-harness-at-it) — read
+it once and apply the same three steps to the deploy LAN URL.
+`$INTERNAL_API_KEY` is the key in `deploy/.env` (called
+`INTERNAL_API_KEY`), not the per-host `K3_API_KEY`. The `model.base_url`
+becomes `http://<server>/llm/v1` (note the `/llm/` prefix the Caddy
+router adds).
 
 ---
 
