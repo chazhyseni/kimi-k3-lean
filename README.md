@@ -674,14 +674,34 @@ want a different shard count or want to pre-validate the layout.
 
 ## Verify it works
 
-```bash
-curl http://127.0.0.1:8080/v1/models
-curl -X POST http://127.0.0.1:8080/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d '{"model":"kimi-k3","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+See [Test it](#test-it) in the Quick Start above for the five real
+demonstrations: `/v1/models`, blocking completion, streaming with
+`curl -N`, auth, and `/v1/state/{save,load}`.
+
+Expected response shape for the chat completion (truncated):
+
+```
+{
+  "id": "chatcmpl-<random>",
+  "object": "chat.completion",
+  "created": 1755200000,
+  "model": "kimi-k3",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "<real output from the engine, not a canned reply>"},
+    "finish_reason": "stop"
+  }],
+  "usage": {
+    "prompt_tokens": N,
+    "completion_tokens": M,
+    "total_tokens": N + M
+  }
+}
 ```
 
-Expected (the article's engine returns its real output, not "hello"):
+If `usage.prompt_tokens` reports 0, the engine didn't run — that's
+the symptom of a missing or unreadable checkpoint. Check the server
+startup log for `engine open failed`.
 
 ```json
 {"id":"chatcmpl-...","object":"chat.completion","model":"kimi-k3",
@@ -757,14 +777,16 @@ Then `hermes -z "prompt"` uses the local model.
 
 ### Why no GPU?
 
-Kimi K3's active parameter count is small (the MoE routes a subset of
-the ~385 experts per token). The article's design discards the GPU
-entirely and reads expert weights from NVMe through native MXFP4
-matmul: no dequantize-on-read, no per-token upload. The cost is bound
-by NVMe bandwidth, not GPU compute. On a single workstation with
-3.2 GB/s O_DIRECT, the article measured a few tokens per second at
-128 GB RAM with bit-identical output across the whole 8 → 224 GB
-RAM ladder.
+Each token activates 16 routed experts out of 896 per MoE layer (top-k
+= 16, with 2 shared experts always on). That's 18 expert reads per
+layer × 92 MoE layers = 1,656 expert reads per token — about 16.7 MB
+each in MXFP4, ~27 MB of expert weights touched per layer. The
+article's design discards the GPU entirely: read those expert weights
+straight from NVMe through native MXFP4 matmul, no dequantize-on-read,
+no per-token upload. The cost is bound by NVMe bandwidth, not GPU
+compute. On a single workstation with 3.2 GB/s O_DIRECT, the article
+measured a few tokens per second at 128 GB RAM with bit-identical
+output across the whole 8 → 224 GB RAM ladder.
 
 ### Why ctypes?
 
