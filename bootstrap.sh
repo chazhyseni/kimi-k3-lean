@@ -256,21 +256,31 @@ if [ -f "$K3_DIR/server.pid" ]; then
 fi
 
 # Source 2: anything serving from our repo, even if the PID file is gone.
-prior_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}")
-if [ -n "$prior_pids" ]; then
-    warn "found stale serve/__main__.py still running in $K3_DIR (PID(s): $prior_pids)"
-    _kill_prior_serve SIGTERM $prior_pids
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        still=$(echo "$prior_pids" | tr " " "\n" | while read p; do ps -p "$p" -o pid= 2>/dev/null; done)
-        [ -z "$still" ] && break
-        sleep 0.3
-    done
-    # Recheck; SIGKILL the survivors
-    still_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}")
-    if [ -n "$still_pids" ]; then
-        _kill_prior_serve SIGKILL $still_pids
-    fi
-fi
+# NOTE: Use case instead of `[ -n "$x" ]` because an empty prior_pids under
+# `set -euo pipefail` would make the conditional itself exit 1 and abort
+# the whole bootstrap. case always evaluates true (matched) so it doesn't trip set -e.
+prior_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}" || true)
+case "$prior_pids" in
+    "")
+        : ;;  # nothing stale; skip
+    *)
+        warn "found stale serve/__main__.py still running in $K3_DIR (PID(s): $prior_pids)"
+        _kill_prior_serve SIGTERM $prior_pids || true
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+            still=$(echo "$prior_pids" | tr " " "\n" | while read p; do ps -p "$p" -o pid= 2>/dev/null; done || true)
+            case "$still" in
+                "") break ;;
+                *) sleep 0.3 ;;
+            esac
+        done
+        # Recheck; SIGKILL the survivors
+        still_pids=$(ps -ef 2>/dev/null | grep "serve/__main__.py" | grep "$K3_DIR" | awk "{print \$2}" || true)
+        case "$still_pids" in
+            "") : ;;
+            *) _kill_prior_serve SIGKILL $still_pids || true ;;
+        esac
+        ;;
+esac
 # Create a small env file the user can `source` to recover the API key
 cat > "$K3_DIR/server.env" <<EOF
 K3_HOST=$K3_HOST
