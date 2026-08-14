@@ -37,7 +37,17 @@ to a Python server via ctypes. That library is the seam.
 
 ## Quick start
 
-Three commands:
+One command, from anywhere:
+
+```
+curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
+```
+
+That's the whole thing. The script clones the repo to `~/.kimi-k3-lean`,
+builds the C engine, and starts the OpenAI server on
+`http://127.0.0.1:8080`. No sudo, no system installation.
+
+If you already have the repo cloned, the equivalent is:
 
 ```
 git clone https://github.com/chazhyseni/kimi-k3-lean.git
@@ -45,11 +55,9 @@ cd kimi-k3-lean
 ./scripts/setup-and-serve.sh
 ```
 
-That's all a new user types. The script handles every step from there.
-
 ### What the script does
 
-Runs the four steps in order, all automatically, all idempotent and
+The first time you run it, four steps in order. All idempotent and
 resumable:
 
 1. **Install OS-level prereqs** (`gcc`, `cmake`, `python3`,
@@ -119,7 +127,7 @@ Windows: `.\scripts\setup-and-serve.ps1` with the same flags.
 | **Bearer auth** | `--api-key` with constant-time compare; 401 without / 401 wrong / 200 correct |
 | **Any harness** | Open WebUI, LM Studio, Continue.dev, Cursor, Hermes, Claude Code, aider, OpenCode, Qwen, Pi — point them at `http://127.0.0.1:8080/v1` |
 | **Cross-platform** | Linux x86_64, macOS arm64 + x86_64, Windows. CI runs the 3 GATEs on all three |
-| **Lean resource profile** | 8 GB RAM floor (trunk resident), 982 GB of disk-resident experts (4 KiB-aligned per-expert records, MXFP4) |
+| **Lean resource profile** | 8 GB RAM floor (trunk resident), 1.45 TB of disk-resident experts in MXFP4 (4 KiB-aligned per-expert records) |
 | **No dependencies beyond libc** | No BLAS, no PyTorch, no CUDA. `libk3.so` is 162 KB. Python server is stdlib-only |
 | **Bit-identical to the oracle** | The article ships 32-oracle-position teacher forcing and 20-token greedy/incremental decoders. All 3 GATEs pass |
 
@@ -127,13 +135,19 @@ Windows: `.\scripts\setup-and-serve.ps1` with the same flags.
 
 ## Architecture
 
-The article's verified architecture diagram:
+The combined engine:
 
-![article architecture](docs/images/main_architecture.png)
+![combined engine architecture](docs/images/combined-architecture.png)
 
-The combined engine adds one piece to the article's layout: an
-OpenAI-compatible HTTP server in front of `k3_open` / `k3_step`, which
-any harness can speak to.
+Rendered from `docs/images/combined-architecture.dot` (Graphviz). Every
+numeric claim in the diagram is sourced from `include/k3/k3.h` and
+`docs/PERFORMANCE.md` — the article's authoritative data. Re-render
+with `dot -Tpng docs/images/combined-architecture.dot -o docs/images/combined-architecture.png`.
+
+The top four rows are the **engine** (article's code, untouched). The
+**combined** piece is the seam: `libk3.so` exposes the engine's 14
+public C functions to a Python OpenAI server via ctypes, so any
+harness that speaks the OpenAI Chat Completions API can talk to it.
 
 ### Per-token forward step
 
