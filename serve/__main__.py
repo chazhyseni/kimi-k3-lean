@@ -20,6 +20,43 @@ from .engine import Engine, EngineError            # noqa: E402
 from .server import serve                          # noqa: E402
 
 
+class _NullEngine:
+    """Sentinel used when the real engine failed to open (no model on disk).
+
+    The OpenAI server still comes up so /v1/models works (Hermes/bookmarks
+    can register the URL); /v1/chat/completions requests get an
+    engine_error envelope. Shape mirrors Engine's read-only introspection.
+    """
+
+    def __init__(self, model_id: str = "kimi-k3") -> None:
+        self.model_id   = model_id
+        self.n_layers   = 0
+        self.vocab_size = 0
+        self.ctx_size   = 0
+        # The http layer does `with engine._lock:` per request.
+        from threading import Lock
+        self._lock = Lock()
+
+    def close(self) -> None:
+        pass
+
+    # Operations the http layer calls. Each raises EngineError which the
+    # server catches and converts to a 500 engine_error JSON envelope.
+    def tokenize(self, text: str):
+        raise EngineError("engine not loaded (no model on disk; run "
+                          "`kimi-k3-lean fetch` to download K3 weights)")
+
+    def generate(self, prompt_ids, *, max_tokens: int = 0):
+        raise EngineError("engine not loaded (no model on disk)")
+
+    def reset_stats(self) -> None: pass
+    def get_stats(self): return None
+    def save_state(self, path) -> None:
+        raise EngineError("engine not loaded")
+    def load_state(self, path) -> None:
+        raise EngineError("engine not loaded")
+
+
 def bounded_int(lo: int, hi: int):
     def parse(text: str) -> int:
         try:
@@ -115,9 +152,27 @@ examples:
             trunk_gb=args.trunk_gb,
             incremental=not args.no_incremental,
         )
+    engine_loaded = False
+    engine = None
+    try:
+        engine = Engine(
+            str(model),
+            preset=args.preset,
+            trunk_dir=args.trunk_dir,
+            config_path=args.config,
+            tok_dir=args.tok_dir,
+            layers=args.layers,
+            cache_gb=args.cache_gb,
+            trunk_gb=args.trunk_gb,
+            incremental=not args.no_incremental,
+        )
+        engine_loaded = True
     except EngineError as e:
         print(f"engine open failed: {e}", file=sys.stderr)
-        return 1
+        print("the HTTP scaffold will still come up; /v1/models works,", file=sys.stderr)
+        print("but /v1/chat/completions will return engine_error until you", file=sys.stderr)
+        print("download weights via:", file=sys.stderr)
+        print(f"  bash $K3_DIR/scripts/setup-and-serve.sh --download-only  (K3_DIR default: ~/.kimi-k3-lean)", file=sys.stderr)
 
     print(f"kimi-k3-lean OpenAI server")
     print(f"  model    {model_id} — {engine.model_id}, "
@@ -128,6 +183,14 @@ examples:
         print(f"\nWARNING: listening on {args.host} with no --api-key: "
               f"anyone who can reach this port can use the model.",
               file=sys.stderr)
+
+    # Wrap engine (or its absence) in a uniform interface for the http
+    # layer. When the real engine loaded, use it directly. When it didn't,
+    # the wrapper exposes the same .model_id / .n_layers / .vocab_size /
+    # .ctx_size as Engine does, so /v1/models still returns a useful body;
+    # /v1/chat/completions returns the engine_error envelope.
+    if engine is None:
+        engine = _NullEngine(model_id=model_id or "kimi-k3")
 
     srv = serve(
         engine,

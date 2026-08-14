@@ -137,3 +137,8 @@ valgrind-out.*
 # Deploy stack runtime files
 deploy/.env
 deploy/checkpoints/
+
+# Runtime state created by the running server. Never commit.
+server.env
+server.pid
+server.log
