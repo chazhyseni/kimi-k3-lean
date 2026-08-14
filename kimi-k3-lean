@@ -43,7 +43,17 @@ _k3_find_repo() {
         echo "$K3_HOME"
         return 0
     fi
-    # 2. THIS script sits in the repo root (dev install: ./kimi-k3-lean serve)
+    # 2. **user install with conf**: if the home install dir exists and has
+    # a conf file, always prefer it -- this is where the running server's
+    # state lives. Without this check, a dev checkout elsewhere (./kimi-k3-lean
+    # from a freshly cloned repo) would resolve to the wrong dir and
+    # # "no token; run kimi-k3-lean config set api_key" would be returned
+    # even though server.env has the token under ~/.kimi-k3-lean/.
+    if [ -n "${HOME:-}" ] && [ -f "$HOME/.kimi-k3-lean/serve/__main__.py" ]        && [ -f "$HOME/.kimi-k3-lean/server.env" ]; then
+        echo "$HOME/.kimi-k3-lean"
+        return 0
+    fi
+    # 3. THIS script sits in the repo root (dev install: ./kimi-k3-lean serve)
     local me="${BASH_SOURCE[0]}"
     while [ -L "$me" ]; do me=$(readlink "$me"); done
     local script_dir
@@ -52,12 +62,12 @@ _k3_find_repo() {
         echo "$script_dir"
         return 0
     fi
-    # 3. the launcher next to the clone at ~/.kimi-k3-lean/kimi-k3-lean
+    # 4. the launcher next to the clone at ~/.kimi-k3-lean/kimi-k3-lean
     if [ -f "$HOME/.kimi-k3-lean/serve/__main__.py" ]; then
         echo "$HOME/.kimi-k3-lean"
         return 0
     fi
-    # 4. install layout where the launcher lives at <prefix>/bin/kimi-k3-lean
+    # 5. install layout where the launcher lives at <prefix>/bin/kimi-k3-lean
     #    and the clone sits at <prefix>/repo
     local prefix
     prefix=$(dirname "$(dirname "$me")")
@@ -65,7 +75,7 @@ _k3_find_repo() {
         echo "$prefix/repo"
         return 0
     fi
-    # 5. XDG-style fallback
+    # 6. XDG-style fallback
     if [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean/serve/__main__.py" ]; then
         echo "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean"
         return 0
@@ -134,6 +144,27 @@ _k3_status() {
         echo "kimi-k3-lean running: PID $pid  http://$K3_HOST:$K3_PORT  $K3_HOME/server.log"
         return 0
     fi
+
+    # PID file is missing or stale. Try to find what is actually listening
+    # on the configured port. lsof / fuser / pgrep all have portability
+    # quirks so we chain them and stop at the first match.
+    local discovered=""
+    if command -v lsof >/dev/null 2>&1; then
+        discovered=$(lsof -ti tcp:"$K3_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+    fi
+    if [ -z "$discovered" ] && command -v fuser >/dev/null 2>&1; then
+        discovered=$(fuser "$K3_PORT/tcp" 2>/dev/null | awk "{print \$1}" | head -1)
+    fi
+    if [ -z "$discovered" ] && command -v ss >/dev/null 2>&1; then
+        discovered=$(ss -ltnp 2>/dev/null | awk -v p=":$K3_PORT" "\$4 ~ p {match(\$0, /pid=([0-9]+)/, a); print a[1]; exit}")
+    fi
+    if [ -n "$discovered" ] && kill -0 "$discovered" 2>/dev/null; then
+        # Adopt: rewrite the PID file so future invocations find it directly.
+        [ -n "$K3_HOME" ] && [ "$K3_HOME" != "/" ] && echo "$discovered" > "$K3_HOME/server.pid" 2>/dev/null || true
+        echo "kimi-k3-lean running (discovered, no PID file): PID $discovered  http://$K3_HOST:$K3_PORT  $K3_HOME/server.log"
+        return 0
+    fi
+
     echo "kimi-k3-lean: no server running on http://$K3_HOST:$K3_PORT"
     return 1
 }
