@@ -218,9 +218,19 @@ elif [ ! -t 0 ] && [ ! "${K3_QUIET:-0}" = "1" ]; then
         warn "  install with: pipx install huggingface_hub"
     fi
 
-    nohup bash "$K3_DIR/scripts/setup-and-serve.sh" --download-only \
+    nohup bash "$K3_DIR/scripts/download-model.sh" "$K3_MODEL_DIR" \
         >> "$K3_DIR/download.log" 2>&1 &
     echo "$!" > "$K3_DIR/download.pid"
+    # Quick pre-flight: if the download subprocess exits within 5
+    # seconds it's almost certainly the broken-hf bug. Catch it
+    # here so the user doesn't discover it 4 hours from now.
+    sleep 5
+    if ! kill -0 "$(cat "$K3_DIR/download.pid")" 2>/dev/null; then
+        warn "download subprocess exited early; check $K3_DIR/download.log"
+        warn "  common cause: hf CLI mismatched with system filelock."
+        warn "  fix: delete ~/.local/share/kimi-k3-lean/hf-venv and re-run,"
+        warn "       or set K3_SKIP_DL=1 and run \`kimi-k3-lean fetch\` separately."
+    fi
 else
     warn "no model at $K3_MODEL_DIR"
     warn "to download the real Kimi K3 (~982 GB, ~4 hours):"

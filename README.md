@@ -42,19 +42,17 @@ to a Python server via ctypes. That library is the seam.
 curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
 ```
 
-This brings up the HTTP scaffold on `http://127.0.0.1:8080` within
-~1 minute.  Chat completions return a clean `engine_error` until you
-also download the K3 weights:
+This brings up everything in unattended order:
+- installs build prereqs
+- clones the repo
+- builds `libk3.so` (3 GATEs pass)
+- **starts downloading the 982 GB of K3 weights in the background** (~4 hours, resumable)
+- starts the OpenAI server on `http://127.0.0.1:8080`
+- registers `kimi-k3` with the launcher and your harness
 
-```bash
-# Same command, but opt in to the 982 GB / ~4 hr download too:
-K3_DOWNLOAD=1 curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
-
-# Or download later, after the scaffold is up:
-kimi-k3-lean fetch
-```
-
-When the download finishes, restart the server:
+The model is registered with the server immediately (the launcher can list it,
+Hermes can pick it up), but chat completions return `engine_error` envelopes
+until the download finishes.  When it does:
 
 ```bash
 kimi-k3-lean stop
@@ -62,9 +60,10 @@ kimi-k3-lean start
 kimi-k3-lean chat -m "hello"     # works
 ```
 
-The download is opt-in (not default) because ~982 GB over ~4 hours is
-not something to start uninvited. Use `K3_DOWNLOAD=1` once when you're
-ready to commit to the disk + bandwidth.
+Or just `tail -f ~/.kimi-k3-lean/download.log` to watch progress.
+
+If you don't want the 982 GB download (e.g. you already have the weights,
+or you only want the HTTP scaffold), set `K3_SKIP_DL=1`.
 
 ---
 
