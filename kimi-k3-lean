@@ -408,9 +408,23 @@ _k3_stack() {
         echo "docker not installed; install Docker Desktop or Docker Engine first"
         return 1
     fi
-    if ! docker compose version >/dev/null 2>&1; then
-        echo "docker compose plugin missing; install compose v2 (apt: docker-compose-plugin)"
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "docker not installed; install Docker Desktop (macOS) or Docker Engine (Linux) first"
         return 1
+    fi
+    # The compose plugin is shipped with Docker Desktop on macOS and with
+    # docker-compose-plugin on Linux. We probe by trying to parse
+    # deploy/compose.yml itself; if the plugin is missing, this prints
+    # "unknown command: compose" or "compose: command not found" with a
+    # non-zero exit.
+    if ! docker compose config --quiet -f "$deploy_dir/compose.yml" >/dev/null 2>&1; then
+        # Fall back to the global probe (some shell setups have compose
+        # aliased or wrapped).
+        if ! docker compose version >/dev/null 2>&1; then
+            echo "docker compose plugin missing. On macOS: install Docker Desktop."
+            echo "On Linux: apt install docker-compose-plugin (https://docs.docker.com/compose/install/)"
+            return 1
+        fi
     fi
     # Auto-handle docker client/daemon version mismatch.
     # `docker compose up` against a daemon that's older than the client
