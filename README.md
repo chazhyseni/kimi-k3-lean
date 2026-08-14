@@ -316,43 +316,36 @@ layer does and what it costs.
 sequenceDiagram
     autonumber
     participant H as Harness
-    participant S as serve/server.py<br/>(stdlib HTTP)
-    participant E as serve/engine.py<br/>(ctypes)
-    participant L as libk3.so<br/>(162 KB)
-    participant C as C engine<br/>(k3_step)
+    participant S as serve/server.py
+    participant E as serve/engine.py
+    participant L as libk3.so
+    participant C as C engine
     participant D as NVMe
     participant M as RAM
-
-    H->>S: POST /v1/chat/completions<br/>{"messages": [...], "max_tokens": 256}
-    S->>S: hmac.compare_digest(auth)
-    S->>S: parse JSON (cap 16 MB)
-    S->>E: Engine.open(path, preset)   [once per process]
-    E->>L: ctypes.CDLL("libk3.so")
-    L->>C: k3_open(path, preset)
-    C->>M: mmap(config.json + tokenizer)
-    C->>D: read safetensors index (~96 MB)
-    C->>M: pin N trunk layers (preset)
-    S->>E: Engine.step(prompt, max_tokens)
-    E->>L: k3_tokenize(text, ...)
-    L->>C: -> token ids
-    loop for each new token (until EOS or max_tokens)
-        E->>L: k3_step(ctx, token_ids, max, out, cap)
-        L->>C: forward one step
-        C->>M: read trunk layer (108.81 GB pinned/fitted)
-        C->>D: stream 16 routed experts per layer (~25.83 GB/token)
-        D-->>C: 16.7 MB expert × 16
-        C->>M: update LRU cache
-        C->>C: KDA recurrence + MLA KV
-        C->>L: argmax over 163,840 logits
-        L-->>E: token id
-        E-->>S: {"choices":[{"delta":{"content":"token"}}]}
-        S-->>H: data: {"token"}
-
-    end
-    S-->>H: data: [DONE]
-
-
-    Note over S: Python GIL released between tokens;<br/>SSE flush per token
+    H->>S: 1. POST /v1/chat/completions JSON body
+    S->>S: 2. hmac.compare_digest Bearer token
+    S->>S: 3. parse JSON (cap 16 MB)
+    S->>E: 4. Engine.open path preset
+    E->>L: 5. ctypes.CDLL libk3.so
+    L->>C: 6. k3_open path preset
+    C->>M: 7. mmap config.json + tokenizer
+    C->>D: 8. read safetensors index (~96 MB)
+    C->>M: 9. pin N trunk layers per preset
+    S->>E: 10. Engine.step prompt max_tokens
+    E->>L: 11. k3_tokenize text
+    L-->>E: 12. token ids
+    E->>L: 13. k3_step ctx tokens max
+    L->>C: 14. forward one step
+    C->>M: 15. read trunk layer 108.81 GB pinned
+    C->>D: 16. stream 16 routed experts per layer
+    D-->>C: 17. 16.7 MB expert bytes per expert
+    C->>M: 18. update LRU cache
+    C->>C: 19. KDA recurrence + MLA KV updates
+    C->>L: 20. argmax over 163,840 logits
+    L-->>E: 21. next token id
+    E-->>S: 22. chunk JSON delta
+    S-->>H: 23. SSE chunk (one per token)
+    Note over H,M: Steps 13-23 repeat once per generated token<br/>until EOS or max_tokens. Engine._lock serializes threads.
 ```
 
 ### Layer 2: where the disk and RAM are
