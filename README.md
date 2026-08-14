@@ -74,14 +74,94 @@ If any step fails, re-run the script — it picks up where it left off.
 
 ### Test it
 
-Open another terminal while the server is running:
+Open another terminal while the server is running. The server is
+OpenAI-compatible, so the same `curl` you'd use against `api.openai.com`
+works here — only the URL and the model name change.
+
+**1. List models** — confirm the server is up and discover the model id:
 
 ```
-curl http://127.0.0.1:8080/v1/models
-curl -X POST http://127.0.0.1:8080/v1/chat/completions \
+curl -s http://127.0.0.1:8080/v1/models
+```
+
+returns:
+
+```
+{
+  "object": "list",
+  "data": [{
+    "id": "kimi-k3",
+    "object": "model",
+    "created": 1755200000,
+    "owned_by": "kimi-k3-lean",
+    "permission": []
+  }]
+}
+```
+
+The `id` is what you pass as `"model": "..."` in requests. Default is
+`kimi-k3`; override with `--model-id your-name` when starting the
+server.
+
+**2. Chat completion (blocking)** — single request, full response:
+
+```
+curl -s -X POST http://127.0.0.1:8080/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{"model":"kimi-k3","messages":[{"role":"user","content":"hi"}],"max_tokens":32}'
 ```
+
+**3. Chat completion (streaming)** — same request, server sends the
+response as Server-Sent Events so the user sees tokens as they're
+generated. Use `curl -N` to disable output buffering:
+
+```
+curl -N -s -X POST http://127.0.0.1:8080/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"kimi-k3","stream":true,"messages":[{"role":"user","content":"hi"}],"max_tokens":32}'
+```
+
+You'll see one `data: {..."delta":{"content":"tok"}}` chunk per token,
+followed by `data: [DONE]`. The first chunk arrives after the
+time-to-first-token (RAM-resident layers: ~10-100 ms; cold trunk
+stream: ~1-5 s).
+
+**4. Auth** — `serve/__main__.py --api-key YOUR_TOKEN`. Then:
+
+```
+# Wrong key -> 401
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8080/v1/chat/completions \
+    -H "Authorization: Bearer wrong-token" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"kimi-k3","messages":[{"role":"user","content":"hi"}],"max_tokens":4}'
+
+# Right key -> 200
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8080/v1/chat/completions \
+    -H "Authorization: Bearer YOUR_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"kimi-k3","messages":[{"role":"user","content":"hi"}],"max_tokens":4}'
+```
+
+**5. Conversation resume** — save and reload KDA recurrent state +
+MLA KV cache across processes. Unique to kimi-k3-lean (not in the
+OpenAI spec):
+
+```
+# Save state
+curl -s -X POST http://127.0.0.1:8080/v1/state/save \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_TOKEN" \
+    -d '{"path":"/tmp/my-conversation.state"}'
+
+# ... restart the server, reload state in a new process ...
+curl -s -X POST http://127.0.0.1:8080/v1/state/load \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_TOKEN" \
+    -d '{"path":"/tmp/my-conversation.state"}'
+```
+
+Paths must be under `/tmp`, `/var/tmp`, or `$HOME`. Writes elsewhere
+return 400.
 
 ### Point your harness at it
 
