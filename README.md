@@ -136,10 +136,18 @@ Open another terminal while the server is running. The server is
 OpenAI-compatible, so the same `curl` you'd use against `api.openai.com`
 works here — only the URL and the model name change.
 
+The bearer token lives at `~/.kimi-k3-lean/server.env` (mode 0600) and is
+auto-issued on every server start. The first demo below works with no
+header when the server is bound to `127.0.0.1` only. Anywhere else,
+include the token:
+
 **1. List models** — confirm the server is up and discover the model id:
 
 ```
 curl -s http://127.0.0.1:8080/v1/models
+# or, with auth:
+TOKEN=$(grep ^K3_API_KEY= ~/.kimi-k3-lean/server.env | cut -d= -f2)
+curl -s http://127.0.0.1:8080/v1/models -H "Authorization: Bearer ***"
 ```
 
 returns:
