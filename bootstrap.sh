@@ -197,6 +197,27 @@ elif [ ! -t 0 ] && [ ! "${K3_QUIET:-0}" = "1" ]; then
     say "(set K3_SKIP_DL=1 if you already have the weights)"
     # Setup-and-serve.sh runs detached so the scaffold + server come up
     # while the download continues in the background.
+    # Pre-flight: ensure `hf` actually works before starting the
+    # download. Old huggingface_hub installs (system pip --user, broken
+    # by API changes) report success on `hf --help` but crash with
+    # `TypeError: __init__() got an unexpected keyword argument 'mode'`
+    # the moment they hit a real file. Repair via pipx when possible.
+    if command -v hf >/dev/null 2>&1; then
+        if ! hf cache verify --help >/dev/null 2>&1; then
+            warn "existing \`hf\` is broken; repairing via pipx"
+            if command -v pipx >/dev/null 2>&1; then
+                pipx install --force "huggingface_hub>=1.0" >/dev/null 2>&1 || true
+                ok "reinstalled hf via pipx"
+            else
+                warn "no pipx on PATH; the download will likely fail."
+                warn "  fix: apt install pipx && pipx install huggingface_hub"
+            fi
+        fi
+    else
+        warn "\`hf\` not on PATH; bootstrap needs it to download K3 weights."
+        warn "  install with: pipx install huggingface_hub"
+    fi
+
     nohup bash "$K3_DIR/scripts/setup-and-serve.sh" --download-only \
         >> "$K3_DIR/download.log" 2>&1 &
     echo "$!" > "$K3_DIR/download.pid"
