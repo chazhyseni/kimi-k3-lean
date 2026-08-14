@@ -2,49 +2,40 @@
 # setup-and-serve.sh — one command from clone to running server.
 #
 # Usage:
-#   ./scripts/setup-and-serve.sh                   full path: build + download + convert + serve
-#   ./scripts/setup-and-serve.sh --build-only      just build libk3.so and the CLI
-#   ./scripts/setup-and-serve.sh --download-only   just download weights
-#   ./scripts/setup-and-serve.sh --convert-only    just convert the checkpoint
-#   ./scripts/setup-and-serve.sh --serve-only      just start the server (assume model + build exist)
-#   ./scripts/setup-and-serve.sh --dry-run         build only, start server in fake-engine mode (no model needed)
+#   ./scripts/setup-and-serve.sh                    build + download + convert + serve
+#   ./scripts/setup-and-serve.sh --build-only       build only
+#   ./scripts/setup-and-serve.sh --download-only    download weights only
+#   ./scripts/setup-and-serve.sh --convert-only     convert checkpoint only
+#   ./scripts/setup-and-serve.sh --serve-only       start the server
+#   ./scripts/setup-and-serve.sh --dry-run         build + start server with FakeEngine (no model needed)
+#   ./scripts/setup-and-serve.sh --install-deps    install OS-level prerequisites first
 #
 # Environment variables:
 #   K3_MODEL_DIR    checkpoint directory (default: ./checkpoints/k3)
-#   K3_PRESET       memory preset: laptop|desktop|workstation|server|max|auto (default: auto)
+#   K3_PRESET       memory preset (default: auto)
 #   K3_HOST         bind host (default: 127.0.0.1)
 #   K3_PORT         bind port (default: 8080)
 #   K3_API_KEY      bearer token (default: empty; required if binding non-loopback)
 #   K3_MAX_TOKENS   default max_tokens per request (default: 256)
-#   K3_LOG_REQUESTS log each request (default: false)
-#   SKIP_DOWNLOAD   if 1, do not download weights (assume they exist)
-#   SKIP_CONVERT    if 1, do not convert weights (assume already converted)
-#
-# Examples:
-#   # First-time setup with a real K3 checkpoint:
-#   ./scripts/setup-and-serve.sh
-#
-#   # Bring up server only, model already on disk:
-#   ./scripts/setup-and-serve.sh --serve-only
-#
-#   # Quick smoke-test without downloading:
-#   ./scripts/setup-and-serve.sh --dry-run
+#   K3_LOG_REQUESTS log each request (default: empty)
+#   SKIP_DOWNLOAD   if 1, do not download weights
+#   SKIP_CONVERT    if 1, do not convert weights
 #
 # Exit codes:
 #   0   success
 #   1   build failure
 #   2   download failure
 #   3   convert failure
-#   4   model directory missing (and SKIP_DOWNLOAD=1)
-#   5   server failed to start
+#   4   model directory missing
+#   5   prerequisite tool missing
 #   6   server did not respond to health check
-#   7   prerequisite tool missing (curl, python3, etc.)
 
 set -euo pipefail
 
-# --------------------------------------------------------------- defaults
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# ----------------------- defaults -----------------------
 K3_MODEL_DIR="${K3_MODEL_DIR:-${REPO_ROOT}/checkpoints/k3}"
 K3_PRESET="${K3_PRESET:-auto}"
 K3_HOST="${K3_HOST:-127.0.0.1}"
@@ -60,10 +51,17 @@ DOWNLOAD_ONLY=0
 CONVERT_ONLY=0
 SERVE_ONLY=0
 DRY_RUN=0
+INSTALL_DEPS=0
 
-# --------------------------------------------------------------- args
+# ----------------------- logging -----------------------
+note() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+ok()   { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit "${2:-1}"; }
+
+# ----------------------- arg parsing -----------------------
 usage() {
-    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# //'
+    sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# //'
     exit 0
 }
 
@@ -74,92 +72,175 @@ while [ $# -gt 0 ]; do
         --convert-only)   CONVERT_ONLY=1; shift ;;
         --serve-only)     SERVE_ONLY=1; shift ;;
         --dry-run)        DRY_RUN=1; shift ;;
+        --install-deps)   INSTALL_DEPS=1; shift ;;
         -h|--help)        usage ;;
-        *)                echo "unknown flag: $1" >&2; exit 7 ;;
+        *)                die "unknown flag: $1" 5 ;;
     esac
 done
 
-# --------------------------------------------------------------- preflight
-note() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit "${2:-1}"; }
-
-require_tool() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        die "missing required tool: $1" 7
+# ----------------------- OS detection -----------------------
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        case "${ID:-unknown}:${VERSION_CODENAME:-}" in
+            debian:*) echo "debian" ;;
+            ubuntu:*) echo "ubuntu" ;;
+            fedora:*)  echo "fedora" ;;
+            rhel:*)    echo "rhel" ;;
+            centos:*)  echo "centos" ;;
+            *)         echo "linux-${ID:-unknown}" ;;
+        esac
+    elif command -v lsb_release >/dev/null 2>&1; then
+        lsb_release -is | tr '[:upper:]' '[:lower:]'
+    elif [ "$(uname -s)" = "Darwin" ]; then
+        echo "macos"
+    elif [ "$(uname -s)" = "FreeBSD" ]; then
+        echo "freebsd"
+    else
+        echo "unknown"
     fi
 }
 
-note "preflight"
-require_tool make
-require_tool python3
-require_tool curl
-
-# Check disk space for the model. The article's K3 needs ~982 GB after convert.
-if [ "${DRY_RUN}" -eq 0 ] && [ "${DOWNLOAD_ONLY:-0}" -eq 0 ] && [ "${CONVERT_ONLY:-0}" -eq 0 ]; then
-    if [ "${SKIP_DOWNLOAD:-0}" -eq 0 ]; then
-        model_parent="$(dirname "${K3_MODEL_DIR}")"
-        avail_kb=$(df -Pk "${model_parent}" | awk 'NR==2 {print $4}')
-        avail_gb=$((avail_kb / 1024 / 1024))
-        if [ "${avail_gb}" -lt 1100 ]; then
-            warn "only ${avail_gb} GB free at ${model_parent}; the K3 checkpoint needs ~1100 GB after download+convert"
-            warn "set K3_MODEL_DIR to a path with more space, or set SKIP_DOWNLOAD=1 / SKIP_CONVERT=1"
-        fi
+# ----------------------- tool installer -----------------------
+require_tool() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        die "missing required tool: $1
+install with: ./scripts/setup-and-serve.sh --install-deps
+or use your package manager. " 5
     fi
-fi
+}
 
-# --------------------------------------------------------------- build
+install_deps() {
+    local os
+    os="$(detect_os)"
+    note "installing prerequisites for ${os}"
+
+    case "${os}" in
+        debian|ubuntu)
+            sudo apt-get update
+            sudo apt-get install -y \
+                build-essential cmake git curl wget \
+                python3 python3-pip python3-venv \
+                libssl-dev libgomp1 ca-certificates
+            ;;
+        fedora|rhel|centos)
+            sudo dnf install -y \
+                gcc gcc-c++ make cmake git curl wget \
+                python3 python3-pip \
+                openssl-devel libgomp ca-certificates
+            ;;
+        macos)
+            if ! command -v brew >/dev/null 2>&1; then
+                die "Homebrew not found. Install from https://brew.sh first." 5
+            fi
+            brew install python@3.11 cmake git curl wget openssl
+            ;;
+        *)
+            warn "unknown OS: ${os}. Please install manually:"
+            warn "  build-essential gcc g++ make cmake git curl python3 python3-pip"
+            ;;
+    esac
+
+    # Python deps for the convert step.
+    python3 -m pip install --user --quiet --break-system-packages \
+        safetensors 2>/dev/null \
+        || python3 -m pip install --user --quiet safetensors 2>/dev/null \
+        || warn "could not install safetensors via pip — convert step will fail"
+
+    ok "prerequisites installed"
+}
+
+# ----------------------- subroutines -----------------------
+
 build() {
     note "building libk3.so and bin/k3"
+    require_tool make
+    require_tool gcc
+    require_tool python3
+
     cd "${REPO_ROOT}"
-    # The article's Makefile uses LDFLAGS ?= which doesn't append on systems
-    # where conda sets LDFLAGS; always pass it.
-    LDFLAGS="-lm -pthread" make -j"$(nproc 2>/dev/null || echo 4)" libk3 k3
+
+    # macOS: nproc doesn't exist. Use sysctl.
+    local jobs
+    if command -v nproc >/dev/null 2>&1; then
+        jobs=$(nproc)
+    elif command -v sysctl >/dev/null 2>&1; then
+        jobs=$(sysctl -n hw.ncpu)
+    else
+        jobs=4
+    fi
+
+    LDFLAGS="-lm -pthread" make -j"${jobs}" all
+
     if [ ! -f bin/libk3.so ]; then
         die "build did not produce bin/libk3.so" 1
     fi
     if [ ! -f bin/k3 ]; then
         die "build did not produce bin/k3" 1
     fi
-    note "build OK: $(file bin/libk3.so | head -1)"
+    ok "build OK"
 }
 
-# --------------------------------------------------------------- download
 download() {
     note "downloading Kimi K3 weights to ${K3_MODEL_DIR}"
-    # Use the article's download-model.sh, which is HF-aware and resumable.
     cd "${REPO_ROOT}"
-    if [ ! -f scripts/download-model.sh ]; then
-        die "scripts/download-model.sh missing; this repo should ship it from the article" 2
-    fi
-    # The article's downloader expects a relative path under scripts/.
     mkdir -p "${K3_MODEL_DIR}"
-    K3_MODEL_DIR="${K3_MODEL_DIR}" bash scripts/download-model.sh
+    bash scripts/download-model.sh "${K3_MODEL_DIR}"
+    ok "download OK"
 }
 
-# --------------------------------------------------------------- convert
 convert() {
-    note "converting checkpoint at ${K3_MODEL_DIR} to native format"
+    note "converting checkpoint at ${K3_MODEL_DIR}"
+    if [ ! -d "${K3_MODEL_DIR}" ]; then
+        die "checkpoint directory missing: ${K3_MODEL_DIR}. " \
+            "run ./scripts/setup-and-serve.sh --download-only first." 4
+    fi
     cd "${REPO_ROOT}"
-    # The convert step needs PyTorch + safetensors; the article's Dockerfile.convert
-    # wraps this. For a one-shot convert on the host, see docs/CONVERT.md.
+
+    local native_dir="${K3_NATIVE_DIR:-${K3_MODEL_DIR}-native}"
+
+    # Prefer Python-native convert (no Docker required).
+    if command -v python3 >/dev/null 2>&1 && python3 -c "import safetensors" 2>/dev/null; then
+        note "using python3 tools/convert.py (no Docker required)"
+        python3 tools/convert.py "${K3_MODEL_DIR}" "${native_dir}"
+        ok "convert OK: ${native_dir}"
+        # Point K3_MODEL_DIR at the converted dir so the engine loads it.
+        echo "${native_dir}" > "${K3_MODEL_DIR}/.native-path"
+        return 0
+    fi
+
+    # Fallback: Docker.
     if command -v docker >/dev/null 2>&1; then
-        note "using Docker for conversion (Dockerfile.convert)"
+        note "using Docker (Dockerfile.convert)"
         docker build -f Dockerfile.convert -t kimi-k3-convert .
         docker run --rm \
             -v "${K3_MODEL_DIR}:/data:rw" \
             -v "${REPO_ROOT}:/out:rw" \
             kimi-k3-convert \
-            python3 tools/convert.py /data /out/checkpoints/k3-native
-    else
-        die "convert step needs Docker (or PyTorch on host with transformers, safetensors). " \
-            "see docs/CONVERT.md for the manual path." 3
+            python3 /src/tools/convert.py /data /out/checkpoints/k3-native
+        ok "convert OK (via Docker)"
+        return 0
     fi
+
+    die "convert needs either:
+  1. Python 3 + safetensors (pip install safetensors), or
+  2. Docker.
+
+run ./scripts/setup-and-serve.sh --install-deps to install Python deps." 3
 }
 
-# --------------------------------------------------------------- serve
 serve() {
     local model_path="$1"
+
+    # If convert wrote a .native-path file, use that.
+    if [ -f "${model_path}/.native-path" ]; then
+        local native_path
+        native_path=$(cat "${model_path}/.native-path")
+        if [ -d "${native_path}" ]; then
+            note "using converted checkpoint at ${native_path}"
+            model_path="${native_path}"
+        fi
+    fi
 
     if [ ! -d "${model_path}" ]; then
         die "model directory not found: ${model_path}" 4
@@ -171,25 +252,7 @@ serve() {
     note "  endpoint: http://${K3_HOST}:${K3_PORT}/v1"
     note "  api key:  ${K3_API_KEY:-(none — server is open. do not expose to network.)}"
 
-    # Build the args.
-    local args=(
-        "${model_path}"
-        "--preset" "${K3_PRESET}"
-        "--host" "${K3_HOST}"
-        "--port" "${K3_PORT}"
-        "--max-tokens" "${K3_MAX_TOKENS}"
-    )
-    if [ -n "${K3_API_KEY}" ]; then
-        args+=("--api-key" "${K3_API_KEY}")
-    fi
-    if [ -n "${K3_LOG_REQUESTS}" ]; then
-        args+=("--log-requests")
-    fi
-    if [ "${DRY_RUN}" -eq 1 ]; then
-        args+=("--dry-run")
-    fi
-
-    # If non-loopback and no api key, warn.
+    # Refuse to bind non-loopback without auth.
     if [ "${K3_HOST}" != "127.0.0.1" ] && [ "${K3_HOST}" != "::1" ] && [ -z "${K3_API_KEY}" ]; then
         warn "binding to non-loopback (${K3_HOST}) without --api-key is unsafe."
         warn "any host on the network can use this server."
@@ -197,43 +260,57 @@ serve() {
         sleep 3
     fi
 
-    # Run the server in the foreground. Use LD_LIBRARY_PATH so libk3.so is found.
+    local args=(
+        "${model_path}"
+        "--preset" "${K3_PRESET}"
+        "--host" "${K3_HOST}"
+        "--port" "${K3_PORT}"
+        "--max-tokens" "${K3_MAX_TOKENS}"
+    )
+    [ -n "${K3_API_KEY}" ]      && args+=("--api-key" "${K3_API_KEY}")
+    [ -n "${K3_LOG_REQUESTS}" ] && args+=("--log-requests")
+    [ "${DRY_RUN}" -eq 1 ]      && args+=("--dry-run")
+
     cd "${REPO_ROOT}"
     exec env \
         LD_LIBRARY_PATH="${REPO_ROOT}/bin:${LD_LIBRARY_PATH:-}" \
         python3 serve/__main__.py "${args[@]}"
 }
 
-# --------------------------------------------------------------- workflow
+# ----------------------- main flow -----------------------
 
-# In dry-run, build + serve with FakeEngine. Skip download/convert.
+# Optional: install OS-level deps first.
+if [ "${INSTALL_DEPS}" -eq 1 ]; then
+    install_deps
+    note "rerun this script without --install-deps to continue setup"
+    exit 0
+fi
+
+# Dry-run: build + serve fake. No download, no convert, no real model.
 if [ "${DRY_RUN}" -eq 1 ]; then
+    require_tool python3
     build
     mkdir -p /tmp/k3-lean-fake
     serve /tmp/k3-lean-fake
     exit 0
 fi
 
-# Build unless --serve-only.
+# Real-model flow.
 if [ "${SERVE_ONLY}" -eq 0 ]; then
     build
 fi
 
-# Download unless --build-only or --serve-only or SKIP_DOWNLOAD=1.
 if [ "${BUILD_ONLY}" -eq 0 ] && [ "${SERVE_ONLY}" -eq 0 ] && [ "${SKIP_DOWNLOAD}" -eq 0 ]; then
     download
 fi
 
-# Convert unless --build-only, --download-only, --serve-only, or SKIP_CONVERT=1.
 if [ "${BUILD_ONLY}" -eq 0 ] && [ "${DOWNLOAD_ONLY}" -eq 0 ] && [ "${SERVE_ONLY}" -eq 0 ] && [ "${SKIP_CONVERT}" -eq 0 ]; then
     convert
 fi
 
-# Done-with-just-steps.
 if [ "${BUILD_ONLY}" -eq 1 ] || [ "${DOWNLOAD_ONLY}" -eq 1 ] || [ "${CONVERT_ONLY}" -eq 1 ]; then
-    note "done."
+    ok "done."
     exit 0
 fi
 
-# Otherwise serve.
 serve "${K3_MODEL_DIR}"

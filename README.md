@@ -41,25 +41,61 @@ to the Python server. That library is the seam.
 
 ## Quick start
 
+Two paths. Pick the one that fits your hardware.
+
+### Path A: Smoke-test (no model, ~30 seconds)
+
+This builds the engine and starts the server in fake-engine mode. Good
+for verifying your toolchain works before committing to a download.
+
 ```bash
 git clone https://github.com/chazhyseni/kimi-k3-lean.git
 cd kimi-k3-lean
-./scripts/setup-and-serve.sh
+./scripts/setup-and-serve.sh --dry-run
 ```
 
-That's it. The script:
-
-1. Builds `libk3.so` and the `k3` CLI (~30 seconds on a modern machine)
-2. Downloads the Kimi K3 weights from HuggingFace (resumable; ~1.56 TB, ~3-4 hours)
-3. Converts the weights to native format (`Dockerfile.convert`, ~3-4 hours)
-4. Starts the server on `http://127.0.0.1:8080` (loopback only; use `--host 0.0.0.0 --api-key ...` for network exposure)
-5. Prints a curl command you can use to verify it's working
-
-If you don't have ~1 TB of disk and a few hours, use the `K3_MODEL=lite` flag to load a smaller toy model and play with the server.
+Then in another terminal:
 
 ```bash
-./scripts/setup-and-serve.sh --dry-run   # HTTP-layer smoke test, no model needed
+curl http://127.0.0.1:8080/v1/models
 ```
+
+The fake engine returns canned responses so you can confirm the HTTP
+layer, SSE streaming, and auth all work before investing in a model download.
+
+### Path B: Real Kimi K3 (~1 TB disk, 3-4 hours)
+
+Requires Docker, Python 3.11+, make, gcc, ~1.1 TB free disk.
+
+```bash
+git clone https://github.com/chazhyseni/kimi-k3-lean.git
+cd kimi-k3-lean
+./scripts/setup-and-serve.sh          # build + download + convert + serve
+```
+
+The script will:
+
+1. **Build** `libk3.so` and the `k3` CLI (~30 seconds)
+2. **Download** Kimi K3 weights from HuggingFace (~1.56 TB, ~3 hours, resumable)
+3. **Convert** to native format via Docker (~3-4 hours, ~982 GB output)
+4. **Start** the server on `http://127.0.0.1:8080`
+
+Once running, in another terminal:
+
+```bash
+curl http://127.0.0.1:8080/v1/models
+curl -X POST http://127.0.0.1:8080/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"kimi-k3","messages":[{"role":"user","content":"hi"}],"max_tokens":32}'
+```
+
+### Just want the model running? Already have weights?
+
+```bash
+./scripts/setup-and-serve.sh --serve-only
+```
+
+This skips the build/download/convert and just starts the server with whatever's in `./checkpoints/k3`.
 
 ---
 
