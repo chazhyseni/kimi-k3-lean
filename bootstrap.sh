@@ -182,14 +182,28 @@ else
 fi
 
 # ----- 3b. model dir -----
-# Default: download K3 weights in the background and start the server.
-# The model does not perform without the weights (the C engine returns
-# engine_error on /v1/chat/completions with no model on disk). Set
-# K3_SKIP_DL=1 to skip the download.
+# Try to use existing K3-shaped weights first. The repo's full Kimi K3
+# checkpoint is 982 GB (1.56 TB across 96 shards). On a personal machine
+# that is several hours of disk and bandwidth; many users already have
+# the Kimi-Linear-48B-A3B (~92 GB, 20 shards, same architecture family),
+# or just the MoE expert tensors (~18 GB) from a Warp-style lean build.
+#
+# Auto-detect order:
+#   1. $K3_MODEL_DIR already has *.safetensors -> use it (canonical path).
+#   2. ~/kimi-local/models/{kimi-linear-shards,kimi-linear.waste,...}
+#      (the common dev layout the engine project ships with).
+#   3. Otherwise, prompt to download the full 982 GB checkpoint.
+#
+# Set K3_SKIP_DL=1 to skip the auto-download.
+# Set K3_FORCE_FULL=1 to download moonshotai/Kimi-K3 even if a smaller
+# Kimi-Linear / warp-style lean variant is found on disk.
 DL_NEEDED=1
+
 if [ "${K3_SKIP_DL:-0}" = "1" ]; then
     ok "skipping model download (K3_SKIP_DL=1)"
     DL_NEEDED=0
+elif [ "${K3_FORCE_FULL:-0}" = "1" ]; then
+    : # skip auto-detect, proceed to full download
 elif find "$K3_MODEL_DIR" -maxdepth 2 -name "*.safetensors" -print -quit 2>/dev/null | grep -q .; then
     ok "model already at $K3_MODEL_DIR (has safetensors shards)"
     DL_NEEDED=0
@@ -197,6 +211,32 @@ elif [ -f "$K3_DIR/download.pid" ] && kill -0 "$(cat "$K3_DIR/download.pid" 2>/d
     pid=$(cat "$K3_DIR/download.pid")
     ok "model download in progress (pid $pid); tail $K3_DIR/download.log"
     DL_NEEDED=0
+else
+    # Look for existing K3-shaped weights on this host. Pick the first
+    # directory under the search list that has actual *.safetensors.
+    found=""
+    for c in \
+            "$HOME/kimi-local/models/kimi-linear-shards" \
+            "$HOME/kimi-local/models/kimi-linear.waste" \
+            "$HOME/kimi-local/models/kimi-k3" \
+            "$HOME/kimi-local/models/kimi-linear" \
+            "$HOME/.kimi-k3-lean/checkpoints/kimi-linear" \
+            "$HOME/.kimi-k3-lean/checkpoints/kimi-linear-shards"; do
+        if [ -d "$c" ] && find "$c" -maxdepth 2 -name "*.safetensors" -print -quit 2>/dev/null | grep -q .; then
+            found="$c"
+            break
+        fi
+    done
+    if [ -n "$found" ]; then
+        size=$(du -sh "$found" 2>/dev/null | awk "{print \$1}")
+        ok "found existing K3-shaped weights at $found ($size)"
+        ok "  using this instead of downloading the 982 GB checkpoint"
+        ok "  (set K3_FORCE_FULL=1 to download moonshotai/Kimi-K3 anyway)"
+        # Symlink so the engine finds them at the canonical path.
+        rm -rf "$K3_MODEL_DIR" 2>/dev/null || true
+        ln -sfn "$found" "$K3_MODEL_DIR"
+        DL_NEEDED=0
+    fi
 fi
 
 if [ "$DL_NEEDED" = "1" ]; then

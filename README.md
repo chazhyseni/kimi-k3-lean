@@ -46,13 +46,18 @@ This brings up everything in unattended order:
 - installs build prereqs
 - clones the repo
 - builds `libk3.so` (3 GATEs pass)
-- **starts downloading the 982 GB of K3 weights in the background** (~4 hours, resumable)
+- **auto-detects existing K3-shaped weights** on disk at common paths
+  (e.g. `~/kimi-local/models/kimi-linear-shards` is the 92 GB Warp
+  Linear variant; `kimi-linear.waste` is the 18 GB expert-only
+  variant). If found, it symlinks them in -- no download.
+- **otherwise starts downloading the 982 GB full K3 checkpoint**
+  in the background (~4 hours, resumable).
 - starts the OpenAI server on `http://127.0.0.1:8080`
 - registers `kimi-k3` with the launcher and your harness
 
-The model is registered with the server immediately (the launcher can list it,
-Hermes can pick it up), but chat completions return `engine_error` envelopes
-until the download finishes.  When it does:
+The model is registered with the server immediately (the launcher can
+list it, Hermes can pick it up), but chat completions return
+`engine_error` envelopes until weights are on disk. When they are:
 
 ```bash
 kimi-k3-lean stop
@@ -62,8 +67,13 @@ kimi-k3-lean chat -m "hello"     # works
 
 Or just `tail -f ~/.kimi-k3-lean/download.log` to watch progress.
 
-If you don't want the 982 GB download (e.g. you already have the weights,
-or you only want the HTTP scaffold), set `K3_SKIP_DL=1`.
+If you don't want the auto-detected variant picked up (e.g. you have a
+small lean variant on disk but you want the 982 GB full K3 anyway),
+set `K3_FORCE_FULL=1`.
+
+If you want the scaffold without ANY model (the server still starts,
+chat returns `engine_error` envelopes, but you can test the HTTP API),
+set `K3_SKIP_DL=1`.
 
 ---
 
