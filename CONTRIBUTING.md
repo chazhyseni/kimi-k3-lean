@@ -38,7 +38,7 @@ Report at least three runs per arm, and report all of them:
 
 Where you can, measure **counts instead of seconds**, bytes read per token, cache
 evictions, pinned layers. They are immune to scheduling noise and make a much stronger
-claim. See [docs/BENCHMARKING.md](docs/BENCHMARKING.md).
+claim. See docs/PERFORMANCE.md for the article's measured data.
 
 ## Style
 
