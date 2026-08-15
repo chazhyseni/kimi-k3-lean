@@ -16,4 +16,4 @@ body:
     attributes:
       label: Checked the roadmap
       options:
-        - label: I read docs/ROADMAP.md and this is not already listed
+        - label: I checked existing issues and this is not already listed

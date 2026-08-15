@@ -124,7 +124,7 @@ want a different shard count or want to pre-validate the layout.
 
 ## Verify it works
 
-See [Test it](#test-it) in the Quick Start above for the five real
+See the README's Quick Start section for the five real
 demonstrations: `/v1/models`, blocking completion, streaming with
 `curl -N`, auth, and `/v1/state/{save,load}`.
 
@@ -244,7 +244,7 @@ for CPU-only / single-binary / cross-platform.
 
 ### Point Hermes at the deploy backend
 
-Same as the [Quick Start snippet](#point-your-harness-at-it) — read
+Same as the Quick Start in the README — read
 it once and apply the same three steps to the deploy LAN URL.
 `$INTERNAL_API_KEY` is the key in `deploy/.env` (called
 `INTERNAL_API_KEY`), not the per-host `K3_API_KEY`. The `model.base_url`

@@ -497,10 +497,10 @@ resume from `POST /v1/state/load`.
   `docs/data/`, and `docs/images/` comes from there.
 - **The HTTP server pattern** is from
   [sqliteai/warp](https://github.com/sqliteai/warp) v0.6.8
-  (`/home/chaz/kimi-local/src/warp/` on the original development host).
+  (upstream repo).
 - **The deployment topology** (Caddy → gateway → router → model) is
   borrowed from
-  `the llm-server project.
+  the llm-server project.
 
 The combined engine, the `libk3.so` seam, the cross-platform
 packaging, the LAN deployment stack, and everything new in this repo

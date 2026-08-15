@@ -64,5 +64,6 @@ it is a checklist, not a formality.
 
 ## Scope
 
-Read [docs/ROADMAP.md](docs/ROADMAP.md) first. It also lists what is deliberately *not*
-planned and why, which may save you writing something that will be declined.
+Check the existing issues and README first. The README lists what is
+deliberately *not* planned and why, which may save you writing something
+that will be declined.

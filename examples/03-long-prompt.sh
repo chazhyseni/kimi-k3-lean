@@ -7,7 +7,7 @@
 # the shell, so a UTF-8 string can reach the engine as different bytes than you typed.
 #
 # Be aware that prefill is not chunked and MLA attention is quadratic in sequence length,
-# so a long file is slow. See docs/ROADMAP.md.
+# so a long file is slow.
 set -euo pipefail
 MODEL="${1:?usage: 03-long-prompt.sh <model_dir> <trunk_dir> <file>}"
 TRUNK="${2:?}"

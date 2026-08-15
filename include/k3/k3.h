@@ -28,7 +28,7 @@
  *   93 layers: 69 Kimi Delta Attention (KDA) + 24 Gated MLA, plus one dense layer.
  *   Hidden 7168, 96 heads, 896 routed experts with top-16 selection and 2 shared,
  *   latent width 3584, SiTU-GLU activation, MXFP4 expert weights.
- *   docs/ARCHITECTURE.md maps each of these onto the technical report.
+ *   The article's architecture doc maps each of these onto the technical report.
  *
  * THREE INVARIANTS THAT MUST HOLD
  *   Each of these is a place where a plausible-looking implementation produces a model
@@ -54,8 +54,8 @@
  *   parallel form of the delta rule. This engine does not use it: k3_kda_step runs the
  *   naive sequential O(T) recurrence, one position at a time, and so does the reference
  *   in tools/k3_ref.py. Neither matrix is ever formed, so there was nothing to get right
- *   and no test could have caught getting it wrong. They are recorded in
- *   docs/ARCHITECTURE.md as properties of the algorithm, which is where a claim the code
+ *   and no test could have caught getting it wrong. They are recorded as
+ *   properties of the algorithm here, which is where a claim the code
  *   does not make belongs. Anyone adding a chunked KDA path must reinstate them here
  *   together with the fixtures that gate them.
  */
@@ -406,8 +406,8 @@ extern long k3_expert_drops;
  * full 1M context is a hardware question, not an engine limit.
  *
  * Note that long prompts are also bounded in practice by prefill cost: attention in the
- * MLA layers is quadratic in sequence length, and prefill is not yet chunked. See
- * docs/ROADMAP.md. */
+ * MLA layers is quadratic in sequence length, and prefill is not yet chunked.
+ */
 #define K3_MAX_PROMPT 32768
 #define K3_MAX_GEN     4096
 
