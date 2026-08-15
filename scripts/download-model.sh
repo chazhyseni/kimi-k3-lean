@@ -20,111 +20,35 @@ REPO="moonshotai/Kimi-K3"
 EXPECT_SHARDS=96
 EXPECT_BYTES=1560936091448
 
-# The downloader is the `hf` CLI from huggingface_hub 1.x. The older entry points are
-# gone: `python3 -m huggingface_hub.commands.huggingface_cli` was removed when the CLI
-# was renamed, and the `[cli]` extra no longer exists.
-#
-# We deliberately do NOT attempt a pip install here. On the platform this project
-# targets, a system pip install cannot succeed: Ubuntu 24.04 ships no pip module at
-# all, and once pip is present PEP 668 marks the interpreter externally-managed and
-# refuses. Guessing wrong in an unattended script that is about to move 1.56 TB is
-# worse than stopping with an instruction.
+# The downloader is the `hf` CLI from huggingface_hub 1.x. We do NOT
+# install it here -- the script is about to move 1.56 TB and we want
+# fail-fast behavior, not a pip-install storm on offline hosts. If hf
+# is missing or broken, the user gets a clear message and the script
+# exits non-zero.
 if ! command -v hf >/dev/null 2>&1; then
-    cat >&2 <<'EOF'
-the `hf` CLI is required and was not found on PATH.
+    cat >&2 <<EOF
+the \`hf\` CLI is required but is not on PATH.
 
-Install it one of these ways, then re-run:
-
-  pipx install huggingface_hub            # recommended; what PEP 668 points you to
+Install with one of:
+  pipx install huggingface_hub
   uv tool install huggingface_hub
-  python3 -m venv ~/.venvs/hf && ~/.venvs/hf/bin/pip install huggingface_hub
-    then add ~/.venvs/hf/bin to PATH
 
-On Debian/Ubuntu, `pipx` is `sudo apt install pipx`.
+On Debian/Ubuntu, pipx is: sudo apt install pipx
 EOF
     exit 1
 fi
 
-# Pre-flight: a broken `hf` (e.g. huggingface_hub from system pip with a
-# filelock that doesn't accept mode= kwarg) will report success on `hf --help`
-# but crash with 'TypeError: __init__() got an unexpected keyword argument
-# "mode"' the moment it hits a real file. Detect that quickly and provide
-# a fix: install hf into our own venv at ~/.local/share/kimi-k3-lean/hf-venv
-# (or ~/.venvs/hf if no project-local venv is writable), then PATH-prepend
-# that venv so this and subsequent calls use a known-good install.
-ensure_hf() {
-    # 1. Path-local venv under the repo dir (preferred when writable).
-    if [ -z "${HF_VENV:-}" ]; then
-        for candidate in "${K3_DIR:-}/.hf-venv" "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean/hf-venv" "$HOME/.venvs/hf" "$HOME/.local/share/kimi-k3-lean/hf-venv"; do
-            if [ -x "$candidate/bin/hf" ]; then
-                HF_VENV="$candidate"
-                break
-            fi
-        done
-    fi
-    if [ -z "${HF_VENV:-}" ]; then
-        HF_VENV="$HOME/.local/share/kimi-k3-lean/hf-venv"
-        if [ ! -x "$HF_VENV/bin/hf" ]; then
-            mkdir -p "$(dirname "$HF_VENV")"
-            if command -v python3 >/dev/null 2>&1; then
-                python3 -m venv "$HF_VENV" 2>/dev/null || true
-            fi
-            if [ ! -x "$HF_VENV/bin/pip" ] && command -v uv >/dev/null 2>&1; then
-                # Fall back to uv (creates the venv and installs in one go).
-                uv venv "$HF_VENV" --python python3 2>/dev/null || true
-            fi
-            if [ -x "$HF_VENV/bin/pip" ]; then
-                # Pin filelock to a version that supports mode= kwarg if needed,
-                # and pin huggingface_hub so we don't get a too-new version that
-                # abandoned it. >=1.0,<1.2 covers hf CLI rename and still works
-                # with pip-system filelock 3.x.
-                # --no-deps: huggingface_hub's CLI itself doesn't need
-                # markdown-it-py/pygments/mdurl (those are for the
-                # transformers+rich Jupyter rendering stack). Installing
-                # with deps forces a 5-retry storm on offline hosts that
-                # don't have those packages on their local pypi mirror.
-                # --timeout 20: fail fast on offline hosts instead of
-                # hanging 5x per package.
-                # --disable-pip-version-check: skip the "new pip available"
-                # nag, which itself is a network call.
-                # --no-cache-dir: don't leave partial state.
-                # NO `|| true` here: we want a failure to propagate so
-                # ensure_hf() returns 1 and the caller can act on it.
-                "$HF_VENV/bin/pip" install --quiet --no-deps \
-                    --timeout 20 --no-cache-dir --disable-pip-version-check \
-                    "filelock>=3.12" "huggingface_hub>=1.0,<1.2" 2>>"${DOWNLOAD_LOG:-/dev/null}" || return 1
-            fi
-        fi
-    fi
-    if [ -x "$HF_VENV/bin/hf" ]; then
-        # Prepend the venv to PATH so all subsequent hf calls use it.
-        export PATH="$HF_VENV/bin:$PATH"
-        return 0
-    fi
-    return 1
-}
-ensure_hf || {
-    echo "could not install huggingface_hub into a venv. Likely cause:" >&2
-    echo "  no internet to pypi, or no internet to PyPI mirrors that have" >&2
-    echo "  huggingface_hub + filelock." >&2
-    echo "fix one of:" >&2
-    echo "  - install pipx (apt install pipx) and re-run," >&2
-    echo "  - or use uv (uv tool install huggingface_hub) and re-run," >&2
-    echo "  - or manually download the 1.56 TB checkpoint into $DEST" >&2
-    echo "    and verify with shard_sizes.txt." >&2
-    exit 1
-}
+if ! hf --help >/dev/null 2>&1; then
+    cat >&2 <<EOF
+the \`hf\` CLI on PATH doesn't respond to \`hf --help\`. This usually means
+an old huggingface_hub is installed (pre-1.0, when the CLI was renamed).
 
-# An older installation can provide `hf` without `hf cache verify`, which is what turns
-# the size check below into a real integrity check.
-hf --help >/dev/null 2>&1 || {
-    echo "this hf CLI doesn't respond; install huggingface_hub and re-run." >&2
+Fix: reinstall
+  pipx install --force huggingface_hub
+  uv tool install --force huggingface_hub
+EOF
     exit 1
-}
-hf cache verify --help >/dev/null 2>&1 || {
-    echo "this hf CLI has no 'cache verify'; upgrade huggingface_hub and re-run." >&2
-    exit 1
-}
+fi
 
 # Resolve the branch to an immutable commit ONCE, and use it for both the download and
 # the verification. Otherwise `main` can move between the two steps and the checksums are
