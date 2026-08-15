@@ -54,10 +54,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the built binaries.
+# Copy the built binaries. The Makefile produces bin/libk3.so; CMake
+# produces build/lib/libk3.so. Prefer the Makefile output (it's what
+# bootstrap.sh and the launcher use).
 COPY --from=build /src/bin/k3          /usr/local/bin/k3
 COPY --from=build /src/bin/libk3.so    /usr/local/lib/libk3.so
-COPY --from=build /src/build/lib/libk3.so /usr/local/lib/libk3.so
 
 # Copy the headers (for downstream embedding).
 COPY --from=build /src/include/libk3/libk3.h /usr/local/include/libk3/libk3.h
@@ -69,14 +70,16 @@ COPY --from=build /src/ /opt/kimi-k3-lean/
 # Update the dynamic linker cache.
 RUN ldconfig
 
-# Default: print --help so this image's `docker run` is informative.
-# Override with `docker run ... <model_dir>` to start the server.
-ENTRYPOINT ["/usr/local/bin/k3"]
-CMD ["--help"]
+# Default: start the OpenAI server on port 8080. Mount a checkpoint
+# at /data to get real inference; without it the server still starts
+# and /v1/models works (chat returns engine_error).
+ENV K3_HOST=0.0.0.0 K3_PORT=8080
+EXPOSE 8080
+ENTRYPOINT ["python3", "-u", "serve/__main__.py", "/data", "--host", "0.0.0.0", "--port", "8080"]
 
 # --------------------------------------------------------------- labels
 LABEL org.opencontainers.image.title="kimi-k3-lean" \
       org.opencontainers.image.description="Lean OpenAI-compatible server for Kimi K3 — disk-resident, CPU-only" \
-      org.opencontainers.image.source="https://github.com/sqliteai/kimi-k3-lean" \
+      org.opencontainers.image.source="https://github.com/chazhyseni/kimi-k3-lean" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.vendor="sqliteai"
+      org.opencontainers.image.vendor="chazhyseni"

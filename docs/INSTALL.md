@@ -239,7 +239,7 @@ source ~/llm-client/remote-env.sh
 claude         # Claude Code, OpenCode, aider, Qwen — all use kimi-k3-lean
 ```
 
-Pattern matches `/home/chaz/llms/llm-server/private-llm` but trimmed
+Pattern matches the llm-server project but trimmed
 for CPU-only / single-binary / cross-platform.
 
 ### Point Hermes at the deploy backend

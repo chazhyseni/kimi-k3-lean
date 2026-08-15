@@ -13,7 +13,7 @@ name: release
 #   bin/k3           CLI binary
 #   lib/libk3.so     shared library (Python server uses via ctypes)
 #   include/libk3/   public C headers
-#   README.md, COMBINED.md, INSTALL.md, LICENSE
+#   README.md, LICENSE
 
 on:
   push:
@@ -123,7 +123,7 @@ jobs:
         if: matrix.os != 'windows'
         run: |
           mkdir -p "$RUNNER_TEMP/stage/share/doc/kimi-k3-lean"
-          cp README.md COMBINED.md OPTION_C_HANDOFF.md COMPARISON.md \
+           cp README.md \
              "$RUNNER_TEMP/stage/share/doc/kimi-k3-lean/"
           cp LICENSE "$RUNNER_TEMP/stage/share/doc/kimi-k3-lean/"
           cp install.sh "$RUNNER_TEMP/stage/"
@@ -132,7 +132,7 @@ jobs:
         if: matrix.os == 'windows'
         run: |
           mkdir -p "$RUNNER_TEMP/stage/share/doc/kimi-k3-lean"
-          cp README.md COMBINED.md OPTION_C_HANDOFF.md COMPARISON.md \
+           cp README.md \
              "$RUNNER_TEMP/stage/share/doc/kimi-k3-lean/"
           cp LICENSE "$RUNNER_TEMP/stage/share/doc/kimi-k3-lean/"
           cp install.ps1 "$RUNNER_TEMP/stage/"

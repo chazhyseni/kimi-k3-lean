@@ -3,14 +3,27 @@
 #
 # This image does NOT include the weights; mount them at runtime.
 # The companion compose.yml uses a bind mount or named volume.
+FROM python:3.11-slim-bookworm AS build
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential make \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . /src/
+RUN LDFLAGS="-lm -pthread" make -j"$(nproc)" all
+
+# --- runtime ---
 FROM python:3.11-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# System deps for the C engine (libgomp = OpenMP runtime; the article's
-# kernels are OpenMP-parallelized).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         libgomp1 \
@@ -18,30 +31,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/kimi-k3-lean
-
-# Just the runtime pieces (not tests, not docs, not packaging).
-COPY serve/ /opt/kimi-k3-lean/serve/
-COPY include/ /opt/k3-include/
-COPY bin/libk3.so /opt/kimi-k3-lean/bin/libk3.so
-COPY bin/k3 /opt/kimi-k3-lean/bin/k3
+COPY --from=build /src/serve/ /opt/kimi-k3-lean/serve/
+COPY --from=build /src/bin/libk3.so /opt/kimi-k3-lean/bin/libk3.so
+COPY --from=build /src/bin/k3 /opt/kimi-k3-lean/bin/k3
 
 ENV LD_LIBRARY_PATH=/opt/kimi-k3-lean/bin
 
-# /data is the mount point for the checkpoint.
-WORKDIR /data
 VOLUME ["/data"]
 
-# Default port + args. The compose service overrides these as needed.
 ENV K3_HOST=0.0.0.0 K3_PORT=8080
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/health || exit 1
 
-# The server reads K3_API_KEY from env (set by compose).
-# Wrapper script: sets LD_LIBRARY_PATH and execs the server so
-# ctypes.CDLL picks up libk3.so. Some Python builds don`t honor
-# ENV LD_LIBRARY_PATH set in Dockerfile when launching CMD.
 RUN { \
     echo '#!/bin/sh'; \
     echo 'export LD_LIBRARY_PATH=/opt/kimi-k3-lean/bin:${LD_LIBRARY_PATH}'; \

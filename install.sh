@@ -128,6 +128,6 @@ To start the OpenAI server (after fetching a model):
 
   python3 serve/__main__.py /path/to/checkpoint --host 127.0.0.1 --port 8080
 
-See COMBINED.md and INSTALL.md for next steps.
+See README.md and docs/INSTALL.md for next steps.
 
 EOF

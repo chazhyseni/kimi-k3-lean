@@ -46,9 +46,9 @@ from pathlib import Path
 # article's reference; not assumed.
 EXPECTED_SHARDS = 96
 EXPECTED_HIDDEN = 7168
-EXPECTED_LAYERS = 61          # K3 uses 61 hidden layers + ~32 MLA
-EXPECTED_EXPERTS = 384
-EXPECTED_TOPK = 8
+EXPECTED_LAYERS = 93          # 69 KDA + 24 MLA + 1 dense (see k3.h)
+EXPECTED_EXPERTS = 896
+EXPECTED_TOPK = 16            # top-16 routed + 2 shared
 EXPECTED_VOCAB = 163840
 
 

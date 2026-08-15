@@ -24,7 +24,7 @@
 set -euo pipefail
 
 CLIENT_DIR="${HOME}/llm-client"
-SERVER="${KIMI_SERVER:-${K3_SERVER:-https://10.10.4.104}}"
+SERVER="${KIMI_SERVER:-${K3_SERVER:-https://YOUR_SERVER_IP}}"
 
 note() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m✓\033[0m %s\n' "$*"; }

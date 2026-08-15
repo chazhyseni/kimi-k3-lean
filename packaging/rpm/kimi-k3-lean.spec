@@ -14,8 +14,8 @@ Version:        0.6.8
 Release:        1%{?dist}
 Summary:        Lean OpenAI-compatible server for Kimi K3 — disk-resident, CPU-only
 License:        Apache-2.0
-URL:            https://github.com/sqliteai/kimi-k3-lean
-Source0:        https://github.com/sqliteai/kimi-k3-lean/archive/refs/tags/v%{version}.tar.gz
+URL:            https://github.com/chazhyseni/kimi-k3-lean
+Source0:        https://github.com/chazhyseni/kimi-k3-lean/archive/refs/tags/v%{version}.tar.gz
 
 BuildArch:      x86_64
 BuildRequires:  gcc
@@ -80,5 +80,5 @@ ldconfig
 ldconfig
 
 %changelog
-* Fri Aug 14 2026 sqliteai <dev@kimi-k3-lean.local> - 0.6.8-1
+* Fri Aug 14 2026 chazhyseni <dev@kimi-k3-lean.local> - 0.6.8-1
 - Initial RPM release

@@ -54,5 +54,5 @@ CMD ["--help"]
 
 LABEL org.opencontainers.image.title="kimi-k3-lean-convert" \
       org.opencontainers.image.description="Convert Kimi K3 checkpoints to native format" \
-      org.opencontainers.image.source="https://github.com/sqliteai/kimi-k3-lean" \
+      org.opencontainers.image.source="https://github.com/chazhyseni/kimi-k3-lean" \
       org.opencontainers.image.licenses="Apache-2.0"

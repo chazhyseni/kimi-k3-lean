@@ -106,7 +106,7 @@ After `docker compose up -d`:
 ## Laptop access (any host on the LAN)
 
 ```bash
-curl -fsSL -k https://10.10.4.104/client/install.sh | bash
+curl -fsSL -k https://YOUR_SERVER_IP/client/install.sh | bash
 ```
 
 The installer lands `~/llm-client/`:
@@ -124,7 +124,7 @@ nano ~/llm-client/secrets.env            # paste INTERNAL_API_KEY from admin
 chmod 600 ~/llm-client/secrets.env
 source ~/llm-client/remote-env.sh        # every session
 
-curl -k https://10.10.4.104/v1/models -H "Authorization: Bearer $INTERNAL_API_KEY"
+curl -k https://YOUR_SERVER_IP/v1/models -H "Authorization: Bearer $INTERNAL_API_KEY"
 
 claude                                   # Claude Code now talks to kimi-k3-lean
 opencode run -m kimi-k3 "hello"          # OpenCode does the same
@@ -164,8 +164,8 @@ docker compose logs -f gateway          # one service
 docker compose logs -f k3               # the model backend
 
 # Health
-curl -sk https://10.10.4.104/llm/healthz
-curl -sk https://10.10.4.104/v1/models -H "Authorization: Bearer $INTERNAL_API_KEY"
+curl -sk https://YOUR_SERVER_IP/llm/healthz
+curl -sk https://YOUR_SERVER_IP/v1/models -H "Authorization: Bearer $INTERNAL_API_KEY"
 docker compose ps                        # container state
 
 # Restart one piece

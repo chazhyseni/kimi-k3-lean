@@ -12,24 +12,24 @@ packaging/
 │   └── kimi-k3-lean.rb     # Homebrew formula
 ├── windows/
 │   └── build-msi.ps1       # WiX MSI builder (Windows)
-├── debian/
-│   └── kimi-k3-lean.spec   # RPM .spec (works on rpm-based; for .deb use alien)
+├── rpm/
+│   └── kimi-k3-lean.spec   # RPM .spec
 └── README.md               # this file
 ```
 
 ## Homebrew (macOS, Linuxbrew)
 
-**Tap:** `sqliteai/kimi-k3-lean`
+**Tap:** `chazhyseni/kimi-k3-lean`
 
 **To publish the tap:**
 
-1. Create a new GitHub repo: `sqliteai/homebrew-kimi-k3-lean`
+1. Create a new GitHub repo: `chazhyseni/homebrew-kimi-k3-lean`
 2. Copy `packaging/homebrew/kimi-k3-lean.rb` into `Formula/kimi-k3-lean.rb`
 3. Push
 4. Users install with:
 
 ```bash
-brew tap sqliteai/kimi-k3-lean
+brew tap chazhyseni/kimi-k3-lean
 brew install kimi-k3-lean
 ```
 
@@ -39,7 +39,7 @@ For the initial manual publish:
 
 ```bash
 # From the tap repo root:
-sha256sum <(curl -L https://github.com/sqliteai/kimi-k3-lean/archive/refs/tags/v0.6.8.tar.gz)
+sha256sum <(curl -L https://github.com/chazhyseni/kimi-k3-lean/archive/refs/tags/v0.6.8.tar.gz)
 # Then paste the hash into Formula/kimi-k3-lean.rb
 ```
 
@@ -72,7 +72,7 @@ LDFLAGS="-lm -pthread" make install PREFIX=/usr
 sudo checkinstall --pkgname=kimi-k3-lean \
     --pkgversion=0.6.8 \
     --pkglicense=Apache-2.0 \
-    --maintainer="sqliteai" \
+    --maintainer="chazhyseni" \
     --description="Lean OpenAI-compatible server for Kimi K3"
 ```
 
@@ -81,9 +81,7 @@ direct distribution.
 
 ## Fedora / RHEL (RPM)
 
-The `.spec` file in `packaging/debian/kimi-k3-lean.spec` is actually
-the RPM spec — the directory name is misleading (rename to `rpm/` if
-you want to be tidy).
+The `.spec` file in `packaging/rpm/` is the RPM spec.
 
 Build with:
 
@@ -100,7 +98,7 @@ canonical container packaging. Multi-arch (linux/amd64, linux/arm64) is
 built and pushed by `.github/workflows/release.yml` on tag push:
 
 ```
-ghcr.io/sqliteai/kimi-k3-lean:0.6.8     (runtime)
-ghcr.io/sqliteai/kimi-k3-lean:latest    (rolling)
-ghcr.io/sqliteai/kimi-k3-lean:convert-0.6.8  (PyTorch convert)
+ghcr.io/chazhyseni/kimi-k3-lean:0.6.8     (runtime)
+ghcr.io/chazhyseni/kimi-k3-lean:latest    (rolling)
+ghcr.io/chazhyseni/kimi-k3-lean:convert-0.6.8  (PyTorch convert)
 ```

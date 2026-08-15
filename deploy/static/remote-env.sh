@@ -18,7 +18,7 @@ set -a
 . "${SECRETS}"
 set +a
 
-SERVER="${K3_SERVER:-${KIMI_SERVER:-https://10.10.4.104}}"
+SERVER="${K3_SERVER:-${KIMI_SERVER:-https://YOUR_SERVER_IP}}"
 CA="${CLIENT_DIR}/caddy-root.crt"
 
 if [ -f "${CA}" ]; then

@@ -79,10 +79,7 @@ kimi-k3-lean uninstall        # stop server, remove launcher
 That's it. The launcher is the only entry point most users need.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for cross-platform details
-(Windows PowerShell, Docker, headless servers), [docs/CONFIG.md](docs/CONFIG.md)
-for environment variables and the deploy stack, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-for how the C engine, the HTTP server, the gateway, and the Open WebUI
-fit together.
+(Windows PowerShell, Docker, headless servers) and the deploy stack.
 
 
 ## What you get
@@ -503,7 +500,7 @@ resume from `POST /v1/state/load`.
   (`/home/chaz/kimi-local/src/warp/` on the original development host).
 - **The deployment topology** (Caddy → gateway → router → model) is
   borrowed from
-  `/home/chaz/llms/llm-server/private-llm/` on the same host.
+  `the llm-server project.
 
 The combined engine, the `libk3.so` seam, the cross-platform
 packaging, the LAN deployment stack, and everything new in this repo

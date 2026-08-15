@@ -3,7 +3,7 @@
 # Usage:
 #   docker compose up                    # foreground
 #   docker compose up -d                 # detached
-#   docker compose logs -f                # follow logs
+#   docker compose logs -f               # follow logs
 #   docker compose down                  # stop
 #
 # Prerequisites:
@@ -17,7 +17,6 @@
 name: kimi-k3-lean
 
 services:
-  # --------------------------------------------------------------- runtime
   kimi-k3-lean:
     build:
       context: .
@@ -26,9 +25,6 @@ services:
     container_name: kimi-k3-lean
     restart: unless-stopped
 
-    # Resource limits. These are honored on cgroup v2 hosts (recent
-    # Docker, containerd, podman). On macOS/Windows Docker Desktop the
-    # underlying VM may not propagate these, but they don't fail.
     deploy:
       resources:
         limits:
@@ -38,36 +34,23 @@ services:
           cpus: "4"
           memory: 16G
 
-    # Bind the model directory as a read-only mount. Path is host-side;
-    # override with K3_MODEL_DIR in .env.
+    # Bind the model directory as a read-only mount.
     volumes:
-      - ${K3_MODEL_DIR:-/path/to/checkpoint}:/model:ro
+      - ${K3_MODEL_DIR:-/path/to/checkpoint}:/data:ro
 
     # Network. The host can reach the server at 127.0.0.1:8080.
     ports:
       - "${K3_PORT:-8080}:8080"
 
-    # Environment. K3_PRESET picks the engine preset; K3_HOST/K3_PORT
-    # let the harness know how to reach the server.
+    # Environment. K3_PRESET picks the engine preset; K3_API_KEY
+    # sets the bearer token (required for non-loopback binds).
     environment:
-      K3_MODEL_DIR: /model
-      K3_PRESET: ${K3_PRESET:-server}
-      K3_HOST: 0.0.0.0
-      K3_PORT: "8080"
-      # Optional: API key for /v1/chat/completions auth.
-      # K3_API_KEY: ${K3_API_KEY:-}
-      # Optional: thread count for the engine.
-      # K3_THREADS: "8"
+      K3_API_KEY: ${K3_API_KEY:-}
 
-    # Healthcheck: hit /v1/models; if 200, server is ready.
+    # Healthcheck: hit /health; if 200, server is ready.
     healthcheck:
-      test: ["CMD", "/usr/local/bin/k3", "--help"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 60s
-
-    # Default command: print --help so an unconfigured `docker compose up`
-    # is informative. Override with the CLI invocation in .env.
-    entrypoint: ["/usr/local/bin/k3"]
-    command: ["--help"]
