@@ -28,7 +28,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-MODELS = json.loads(os.environ.get("MODELS", '{"kimi-k3": "Kimi K3 (2.78T, VQ3R experts)"}'))
+MODELS = json.loads(os.environ.get("MODELS", '{"kimi-k3": "Kimi K3 (2.78T params, MXFP4 experts)"}'))
 STATIC_DIR = Path(os.environ.get("STATIC_DIR", "/srv/llm-client"))
 
 app = FastAPI(title="kimi-k3-lean workspace", docs_url=None, redoc_url=None, openapi_url=None)

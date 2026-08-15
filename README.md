@@ -398,7 +398,7 @@ kimi-k3-lean/
 │   ├── notes/                      engineering notes from the article
 │   └── kimi-k3-tech-report.pdf     the article's tech report
 │
-└── LICENSES/                       third-party licenses (article's, kept)
+└── LICENSE                         Apache 2.0
 ```
 
 ---
@@ -514,4 +514,4 @@ Apache License 2.0. See [LICENSE](LICENSE) for the full text.
 
 Third-party code under `src/`, `include/k3/`, `tests/`, `tools/`, and
 `docs/PERFORMANCE.md` is the article's, MIT-licensed at source. See
-[LICENSES/](LICENSES/) (article's `LICENSES/` directory) for details.
+[NOTICE](NOTICE) for third-party component details.

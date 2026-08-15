@@ -171,11 +171,20 @@ jobs:
         if: matrix.os == 'windows-2022' && matrix.build == 'cmake'
         run: |
           LIB="./build/bin/Release/k3.dll"
-          # dumpbin /EXPORTS
+          # dumpbin /EXPORTS — list the public C API symbols.
           "$VCINSTALLDIR/VC/Tools/MSVC/$VCTOOLSVER/bin/Hostx64/x64/dumpbin.exe" /EXPORTS "$LIB" 2>&1 | head -30 || true
-          echo "Public API symbols (PowerShell):"
-          $symbols = & dumpbin /EXPORTS $LIB | Select-String -Pattern 'k3_'
-          $symbols | ForEach-Object { $_.ToString() }
+
+          # All 14 expected symbols must be present.
+          for sym in k3_open k3_close k3_step k3_generate k3_save_state \
+                     k3_load_state k3_tokenize k3_detokenize k3_model_id \
+                     k3_n_layers k3_vocab_size k3_ctx_size k3_get_stats \
+                     k3_reset_stats; do
+            if ! "$VCINSTALLDIR/VC/Tools/MSVC/$VCTOOLSVER/bin/Hostx64/x64/dumpbin.exe" /EXPORTS "$LIB" 2>&1 | grep -q "$sym"; then
+              echo "FAIL: missing symbol $sym"
+              exit 1
+            fi
+          done
+          echo "All 14 public symbols present."
 
       - name: Upload artifacts
         if: success()

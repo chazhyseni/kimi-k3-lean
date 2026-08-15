@@ -51,7 +51,7 @@ from ctypes import (
 )
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import Iterator, Optional
 
 # ----------------------------------------------------------- library loading
 

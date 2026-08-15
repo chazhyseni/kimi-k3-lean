@@ -9,7 +9,7 @@ WHAT THIS DOES
 
   1. Verify all 96 shards are present and byte-complete.
   2. Verify config.json is present and has the expected fields.
-  3. Verify tokenizer.model is present.
+  3. Verify tiktoken.model is present.
   4. Optionally re-shard into a different number of files.
 
 USAGE
@@ -28,7 +28,7 @@ WHAT THE ENGINE EXPECTS
 
   /path/to/native/
   ├── config.json                          # Kimi K3 architecture
-  ├── tokenizer.model                      # tiktoken BPE
+  ├── tiktoken.model                     # tiktoken BPE
   └── model-NNNNN-of-NNNNN.safetensors     # 96 shards by default
 
   k3_open validates the layout on open. A correct layout means the
@@ -76,7 +76,7 @@ def verify(src: Path, *, shards: int = EXPECTED_SHARDS) -> dict:
         ("hidden_size", EXPECTED_HIDDEN),
         ("num_hidden_layers", EXPECTED_LAYERS),
         ("num_experts", EXPECTED_EXPERTS),
-        ("num_experts_per_tok", EXPECTED_TOPK),
+        ("num_experts_per_token", EXPECTED_TOPK),
         ("vocab_size", EXPECTED_VOCAB),
     ]:
         actual = config.get(k)
@@ -85,8 +85,8 @@ def verify(src: Path, *, shards: int = EXPECTED_SHARDS) -> dict:
             warn(f"this might still work, but the engine defaults will be used")
 
     # Check tokenizer
-    if not (src / "tokenizer.model").exists():
-        die(f"missing tokenizer.model at {src}/tokenizer.model")
+    if not (src / "tiktoken.model").exists():
+        die(f"missing tiktoken.model at {src}/tiktoken.model")
 
     # Check shards
     found_shards = sorted(src.glob("model-*-of-*.safetensors"))
@@ -117,7 +117,7 @@ def copy(src: Path, dst: Path, *, shards: int = EXPECTED_SHARDS) -> None:
     dst.mkdir(parents=True, exist_ok=True)
 
     # Always copy config + tokenizer first.
-    for fname in ("config.json", "tokenizer.model", "tokenizer_config.json",
+    for fname in ("config.json", "tiktoken.model", "tokenizer_config.json",
                   "special_tokens_map.json", "generation_config.json"):
         src_path = src / fname
         if src_path.exists():

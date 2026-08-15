@@ -44,7 +44,7 @@ COPY scripts/ /src/scripts/
 COPY tests/ /src/tests/
 COPY Makefile CMakeLists.txt /src/
 
-# Build the engine (we use libwaste-style verification, not libk3).
+# Build the engine (for verification of the convert tool's output).
 RUN LDFLAGS="-lm -pthread" make -j"$(nproc)" libk3
 
 # Default: print help. Override with the convert command.

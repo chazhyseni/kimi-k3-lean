@@ -50,9 +50,6 @@ venv/
 
 # Documentation that doesn't need to be in the image.
 docs/_build/
-COMPARISON.md
-OPTION_C_HANDOFF.md
-COMBINED.md
 
 # The article's huge README (3400 lines, 146 KB).
 # We keep README.md in the image for `docker inspect` and `docker run --help`.

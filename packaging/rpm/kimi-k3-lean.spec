@@ -56,7 +56,7 @@ make install DESTDIR=%{buildroot} PREFIX=%{_prefix}
 
 # Move docs into the rpm-doc convention.
 install -d %{buildroot}%{_docdir}/kimi-k3-lean
-cp README.md COMBINED.md INSTALL.md COMPARISON.md OPTION_C_HANDOFF.md \
+cp README.md docs/INSTALL.md \
    %{buildroot}%{_docdir}/kimi-k3-lean/ 2>/dev/null || true
 cp LICENSE %{buildroot}%{_docdir}/kimi-k3-lean/
 
@@ -64,8 +64,6 @@ cp LICENSE %{buildroot}%{_docdir}/kimi-k3-lean/
 %license LICENSE
 %doc %{_docdir}/kimi-k3-lean/README.md
 %doc %{_docdir}/kimi-k3-lean/INSTALL.md
-%doc %{_docdir}/kimi-k3-lean/COMBINED.md
-%doc %{_docdir}/kimi-k3-lean/COMPARISON.md
 %{_bindir}/k3
 %{_libdir}/libk3.so
 %{_libdir}/libk3_static.a

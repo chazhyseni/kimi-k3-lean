@@ -1,15 +1,13 @@
 # kimi-k3-lean network deployment.
 #
 # Bring-up:
-#   cd deploy && docker compose --profile with-models up -d --build
+#   cd deploy && docker compose --profile with-k3 up -d --build
 #
 # Stand-alone (gateway only, for clients hitting a single host):
 #   docker compose up gateway caddy router workspace -d --build
 #
 # Profiles:
 #   with-k3       build the k3 model image and mount ./checkpoints/k3
-#   with-linear   build a linear-shaped backend (the K3 image is the same;
-#                 just point MODEL_URL at whichever checkpoint you have)
 #   with-webui    add Open WebUI for a browser chat UI
 #
 # The "default" up brings up: gateway, router, workspace, caddy — no model.
@@ -68,7 +66,7 @@ services:
     environment:
       MODELS: |
         {
-          "kimi-k3": "Kimi K3 (2.78T params, VQ3R experts)"
+          "kimi-k3": "Kimi K3 (2.78T params, MXFP4 experts)"
         }
       STATIC_DIR: /srv/llm-client
     volumes:

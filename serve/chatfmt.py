@@ -21,7 +21,7 @@ If your downstream fine-tunes used a different chat template, override
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable
 
 from .engine import Engine

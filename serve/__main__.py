@@ -9,7 +9,6 @@ import argparse
 import os
 import signal
 import sys
-import time
 from pathlib import Path
 
 if __package__ in (None, ""):                    # python3 serve/__main__.py
@@ -47,6 +46,15 @@ class _NullEngine:
                           "`kimi-k3-lean fetch` to download K3 weights)")
 
     def generate(self, prompt_ids, *, max_tokens: int = 0):
+        raise EngineError("engine not loaded (no model on disk)")
+
+    def complete(self, prompt_ids, *, max_tokens: int = 0):
+        raise EngineError("engine not loaded (no model on disk)")
+
+    def stream(self, prompt_ids, *, max_tokens: int = 0):
+        raise EngineError("engine not loaded (no model on disk)")
+
+    def detokenize(self, ids, *, out_cap: int = 4096):
         raise EngineError("engine not loaded (no model on disk)")
 
     def reset_stats(self) -> None: pass
