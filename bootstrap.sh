@@ -187,8 +187,20 @@ fi
 # if you already have them on disk, or just want the HTTP scaffold).
 if [ "${K3_SKIP_DL:-0}" = "1" ]; then
     ok "skipping model download (K3_SKIP_DL=1)"
-elif [ -d "$K3_MODEL_DIR" ] && [ -n "$(ls -A "$K3_MODEL_DIR" 2>/dev/null)" ]; then
-    ok "model already exists at $K3_MODEL_DIR"
+elif find "$K3_MODEL_DIR" -maxdepth 2 -name "*.safetensors" -print -quit 2>/dev/null | grep -q .; then
+    ok "model already at $K3_MODEL_DIR (with safetensors shards)"
+elif [ -f "$K3_DIR/download.pid" ] && kill -0 "$(cat "$K3_DIR/download.pid" 2>/dev/null)" 2>/dev/null; then
+    pid=$(cat "$K3_DIR/download.pid")
+    ok "model download in progress (pid $pid); tail $K3_DIR/download.log"
+else
+    # Stale partial download (e.g. crashed earlier with .cache/ but no
+    # shards). Reset so the next download attempt starts clean.
+    if [ -d "$K3_MODEL_DIR" ] && [ -n "$(ls -A "$K3_MODEL_DIR" 2>/dev/null)" ]; then
+        warn "model dir had non-shard content (stale partial download?); keeping it"
+        warn "  if the download keeps failing, run:"
+        warn "    rm -rf $K3_MODEL_DIR && kimi-k3-lean fetch"
+    fi
+fi
 elif [ ! -t 0 ] && [ ! "${K3_QUIET:-0}" = "1" ]; then
     # Non-interactive (curl|bash) -- default to auto-download.
     mkdir -p "$K3_MODEL_DIR"
