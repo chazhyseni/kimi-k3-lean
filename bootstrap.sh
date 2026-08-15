@@ -230,14 +230,38 @@ if [ "$DL_NEEDED" = "1" ]; then
         >> "$K3_DIR/download.log" 2>&1 &
     echo "$!" > "$K3_DIR/download.pid"
     ok "download started (pid $(cat "$K3_DIR/download.pid"))"
-    # Quick pre-flight: if the download subprocess exits within 5
-    # seconds it's almost certainly the broken-hf bug. Catch it
-    # here so the user doesn't discover it 4 hours from now.
-    sleep 5
-    if ! kill -0 "$(cat "$K3_DIR/download.pid")" 2>/dev/null; then
-        warn "download subprocess exited early; check $K3_DIR/download.log"
-        warn "  fix: rm -rf ~/.local/share/kimi-k3-lean/hf-venv and re-run,"
-        warn "       or set K3_SKIP_DL=1 and run \`kimi-k3-lean fetch\` separately."
+    # Pre-flight: wait for the venv-install phase to finish. This takes
+    # 60-180 seconds the first time (pip install huggingface_hub + cli
+    # deps + filelock). The check has to be long enough to NOT fire on
+    # a healthy install but short enough to catch the broken-hf crash.
+    # Poll for up to 240s; report progress every 20s.
+    pid=$(cat "$K3_DIR/download.pid")
+    say "  pre-flight: download subprocess pid=$pid (waiting up to 240s for venv setup)"
+    waited=0
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 20
+        waited=$((waited + 20))
+        # If we see the download actually started (output file growing
+        # with non-trivial content), we can stop polling -- the venv
+        # install is done.
+        if [ -f "$K3_DIR/download.log" ] && grep -q "downloading moonshotai" "$K3_DIR/download.log" 2>/dev/null; then
+            say "  pre-flight: download started after ${waited}s"
+            break
+        fi
+        if [ "$waited" -ge 240 ]; then
+            warn "  pre-flight: download subprocess still in venv setup after 240s"
+            warn "    it may still complete (slow pip); tail $K3_DIR/download.log"
+            break
+        fi
+        say "  pre-flight: still setting up (${waited}s)..."
+    done
+    if ! kill -0 "$pid" 2>/dev/null; then
+        say "  pre-flight: subprocess exited"
+        warn "download subprocess exited (likely pip-install failed)"
+        warn "  check: tail -n 30 $K3_DIR/download.log"
+        warn "  retry: rm -rf ~/.local/share/kimi-k3-lean/hf-venv"
+        warn "          then: curl | bash  (or kimi-k3-lean fetch)"
+        warn "  skip download: K3_SKIP_DL=1 (scaffold-only mode)"
     fi
 fi
 # ----- 4. launch server in background -----

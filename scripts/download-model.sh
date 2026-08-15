@@ -25,30 +25,50 @@ EXPECT_BYTES=1560936091448
 # fail-fast behavior, not a pip-install storm on offline hosts. If hf
 # is missing or broken, the user gets a clear message and the script
 # exits non-zero.
-if ! command -v hf >/dev/null 2>&1; then
-    cat >&2 <<EOF
-the \`hf\` CLI is required but is not on PATH.
+# Always build our own hf into a venv. The system hf may be broken
+# (Debian ships filelock 3.0.12 with no mode= kwarg; the user-installed
+# huggingface_hub 1.4.1 calls mode= and crashes; `hf --help` works but
+# `hf download` doesn\'t). The fix: an isolated venv with pinned
+# huggingface_hub + filelock that we control.
+#
+# This adds 60-120s of pip install the FIRST time. On reruns, the venv
+# is reused and the script proceeds straight to the download.
+#
+# We do NOT use --quiet: silent pip is what made the user think the
+# bootstrap was stuck. Output is visible.
 
-Install with one of:
-  pipx install huggingface_hub
-  uv tool install huggingface_hub
+VENV="${HF_VENV:-$HOME/.local/share/kimi-k3-lean/hf-venv}"
 
-On Debian/Ubuntu, pipx is: sudo apt install pipx
-EOF
-    exit 1
+hf_works() {
+    # Returns 0 if $VENV/bin/hf exists AND `hf download --help` works.
+    # The "download --help" check is critical: that is the code path
+    # that uses FileLock(mode=...) and would otherwise crash silently.
+    [ -x "$VENV/bin/hf" ] && "$VENV/bin/hf" download --help >/dev/null 2>&1
+}
+
+if ! hf_works; then
+    echo "setting up hf CLI in $VENV" >&2
+    echo "(first run: ~60-120s of pip install. reruns reuse the venv.)" >&2
+    mkdir -p "$(dirname "$VENV")"
+    python3 -m venv "$VENV"
+    "$VENV/bin/pip" install --upgrade pip 2>&1 | tail -2 >&2
+    "$VENV/bin/pip" install \
+        --no-cache-dir --disable-pip-version-check \
+        "filelock>=3.12,<4.0" \
+        "click>=8.0" \
+        "huggingface_hub>=1.0,<1.3" 2>&1 | tail -5 >&2
+    if ! hf_works; then
+        echo >&2
+        echo "FAILED: $VENV/bin/hf doesn\'t work after install." >&2
+        echo "  try: rm -rf $VENV && re-run" >&2
+        echo "  or:  pipx install huggingface_hub   (then set HF_VENV=\$(which hf))" >&2
+        exit 1
+    fi
+    echo "hf ready: $VENV/bin/hf" >&2
 fi
 
-if ! hf --help >/dev/null 2>&1; then
-    cat >&2 <<EOF
-the \`hf\` CLI on PATH doesn't respond to \`hf --help\`. This usually means
-an old huggingface_hub is installed (pre-1.0, when the CLI was renamed).
-
-Fix: reinstall
-  pipx install --force huggingface_hub
-  uv tool install --force huggingface_hub
-EOF
-    exit 1
-fi
+# Prepend the venv\'s bin to PATH so all subsequent `hf` calls use it.
+export PATH="$VENV/bin:$PATH"
 
 # Resolve the branch to an immutable commit ONCE, and use it for both the download and
 # the verification. Otherwise `main` can move between the two steps and the checksums are
@@ -63,9 +83,12 @@ fi
 # anything at all.
 REVISION="${K3_REVISION:-}"
 if [ -z "$REVISION" ]; then
-    REVISION="$(hf models info "$REPO" 2>/dev/null \
-                | tr -d ' ",' \
-                | awk -F: '!v && /^sha:/ {v = $2} END {print v}')"
+    # The `hf models info` subcommand was removed in huggingface_hub 1.x;
+    # the equivalent is the Python API model_info(). Use the venv\'s
+    # python so we don\'t depend on a system pip --user install.
+    REVISION="$("$VENV/bin/python" -c \
+        "from huggingface_hub import model_info; print(model_info('$REPO').sha)" \
+        2>/dev/null)"
 fi
 case "$REVISION" in
     ????????????????????????????????????????) ;;   # 40 hex characters
@@ -101,7 +124,7 @@ echo
 # A token is not needed: the repository is public. If one is present in the environment
 # or in a saved login the CLI uses it for higher rate limits; this script never touches it.
 HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}" \
-hf download "$REPO" --revision "$REVISION" --local-dir "$DEST" --max-workers 16
+hf download "$REPO" --revision "$REVISION" --local-dir "$DEST"
 
 echo
 echo "verifying…"
