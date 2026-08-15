@@ -1,12 +1,12 @@
-# kimi-k3-lean
+# litMoE
 
-Run the 2.78-trillion-parameter Kimi K3 model as an OpenAI-compatible
-HTTP server on a personal computer. No GPU. No BLAS. No framework.
-Cross-platform: Linux, macOS, Windows. Works with every harness that
-speaks the OpenAI Chat Completions API.
+Run trillion-parameter MoE models (Kimi K3 2.78T, Qwen3.8 2.4T) as
+OpenAI-compatible HTTP servers on a personal computer. No GPU. No BLAS.
+No framework. Cross-platform: Linux, macOS, Windows. Works with every
+harness that speaks the OpenAI Chat Completions API.
 
-| 2.78T parameters | MXFP4 experts | 3 GATEs | ~162 KB lib |
-|---|---|---|---|
+| Kimi K3 2.78T | Qwen3.8 2.4T | MXFP4 experts | 3 GATEs | ~162 KB lib |
+|---|---|---|---|---|
 
 ---
 
@@ -26,7 +26,7 @@ a thin shared library:
 | [`FareedKhan-dev/kimi-k3-in-c`](https://github.com/FareedKhan-dev/kimi-k3-in-c) | The Kimi K3 inference engine (9 C files, no BLAS, no framework, no GPU) | Its CLI front-end; its monolithic 1,487-line `k3_run.c` |
 | [`sqliteai/warp`](https://github.com/sqliteai/warp) | The OpenAI Chat Completions server pattern (SSE, request/response shaping, auth, `libwaste.so` ctypes seam) | Its container format (`.waste` is Kimi-Linear, not K3); its `waste_*` API |
 
-The combined engine has one new thing: a `libk3.so` (162 KB on Linux)
+The combined engine has one new thing: a `liblitmoe.so` (162 KB on Linux)
 that exposes the article's model-level operations
 (`k3_open`, `k3_step`, `k3_generate`, `k3_save_state`, `k3_load_state`,
 `k3_tokenize`, `k3_detokenize`, `k3_get_stats`, `k3_reset_stats`,
@@ -39,24 +39,24 @@ to a Python server via ctypes. That library is the seam.
 
 ```bash
 # one command, any POSIX machine:
-curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/chazhyseni/litMoE/main/bootstrap.sh | bash
 ```
 
 This does five things in order, no detours:
-1. Clones to `~/.kimi-k3-lean` (~5 sec)
-2. Builds `libk3.so` (~30 sec)
+1. Clones to `~/.litMoE` (~5 sec)
+2. Builds `liblitmoe.so` (~30 sec)
 3. Starts the OpenAI server on `http://127.0.0.1:8080`
 4. Waits for `/v1/models` to return 200
-5. Installs the `kimi-k3-lean` launcher to `~/.local/bin`
+5. Installs the `litMoE` launcher to `~/.local/bin`
 
 The server starts immediately with or without weights. Without weights,
 `/v1/models` works and `/v1/chat/completions` returns a clear
 `engine_error` JSON envelope. Download weights when you're ready:
 
 ```bash
-kimi-k3-lean fetch          # ~982 GB, ~4 hours, resumable
-kimi-k3-lean stop && kimi-k3-lean start   # restart with weights
-kimi-k3-lean chat -m "hello"              # now works
+litMoE fetch          # ~982 GB, ~4 hours, resumable
+litMoE stop && litMoE start   # restart with weights
+litMoE chat -m "hello"              # now works
 ```
 
 If you already have K3-shaped weights on disk (e.g. `~/kimi-local/models/kimi-linear-shards`),
@@ -67,13 +67,13 @@ bootstrap symlinks them in automatically — no download needed.
 ## Daily use
 
 ```bash
-kimi-k3-lean start            # start the server
-kimi-k3-lean stop             # stop the server
-kimi-k3-lean chat -m "hello"  # one-shot chat (alias: ask)
-kimi-k3-lean doctor           # print install state
-kimi-k3-lean fetch            # download K3 weights (~982 GB, ~4 hrs)
-kimi-k3-lean stack up --webui # full LAN stack with Open WebUI
-kimi-k3-lean uninstall        # stop server, remove launcher
+litMoE start            # start the server
+litMoE stop             # stop the server
+litMoE chat -m "hello"  # one-shot chat (alias: ask)
+litMoE doctor           # print install state
+litMoE fetch            # download K3 weights (~982 GB, ~4 hrs)
+litMoE stack up --webui # full LAN stack with Open WebUI
+litMoE uninstall        # stop server, remove launcher
 ```
 
 That's it. The launcher is the only entry point most users need.
@@ -92,7 +92,7 @@ See [docs/INSTALL.md](docs/INSTALL.md) for cross-platform details
 | **Any harness** | Open WebUI, LM Studio, Continue.dev, Cursor, Hermes, Claude Code, aider, OpenCode, Qwen, Pi — point them at `http://127.0.0.1:8080/v1` |
 | **Cross-platform** | Linux x86_64, macOS arm64 + x86_64, Windows. CI runs the 3 GATEs on all three |
 | **Lean resource profile** | 8 GB RAM floor (trunk resident), 1.45 TB of disk-resident experts in MXFP4 (4 KiB-aligned per-expert records) |
-| **No dependencies beyond libc** | No BLAS, no PyTorch, no CUDA. `libk3.so` is 162 KB. Python server is stdlib-only |
+| **No dependencies beyond libc** | No BLAS, no PyTorch, no CUDA. `liblitmoe.so` is 162 KB. Python server is stdlib-only |
 | **Bit-identical to the oracle** | The article ships 32-oracle-position teacher forcing and 20-token greedy/incremental decoders. All 3 GATEs pass |
 
 ---
@@ -120,7 +120,7 @@ sequenceDiagram
     participant H as Harness
     participant S as serve/server.py
     participant E as serve/engine.py
-    participant L as libk3.so
+    participant L as liblitmoe.so
     participant C as C engine
     participant D as NVMe
     participant M as RAM
@@ -128,7 +128,7 @@ sequenceDiagram
     S->>S: 2. hmac.compare_digest Bearer token
     S->>S: 3. parse JSON (cap 16 MB)
     S->>E: 4. Engine.open path preset
-    E->>L: 5. ctypes.CDLL libk3.so
+    E->>L: 5. ctypes.CDLL liblitmoe.so
     L->>C: 6. k3_open path preset
     C->>M: 7. mmap config.json + tokenizer
     C->>D: 8. read safetensors index (~96 MB)
@@ -211,7 +211,7 @@ flowchart TB
     click disk_experts "https://github.com/FareedKhan-dev/kimi-k3-in-c/blob/main/docs/PERFORMANCE.md" "the article's measured data"
 ```
 
-### What kimi-k3-lean adds
+### What litMoE adds
 
 Everything left of the C engine — the request enters, becomes OpenAI
 JSON, hits the ctypes wrapper, and the wrapper hands the work to the
@@ -219,7 +219,7 @@ article's engine via a 14-function public C API:
 
 | New thing | What it is | Where it lives |
 |---|---|---|
-| `libk3.so` | 162 KB shared library exposing the engine's 14 public C funcs | `src/lib/k3_api.c`, `src/lib/k3_engine.c` |
+| `liblitmoe.so` | 162 KB shared library exposing the engine's 14 public C funcs | `src/lib/k3_api.c`, `src/lib/k3_engine.c` |
 | `serve/server.py` | OpenAI Chat Completions HTTP server, stdlib-only | `serve/server.py` |
 | `serve/engine.py` | ctypes wrapper, maps the 14 C funcs to a Python `Engine` class | `serve/engine.py` |
 | `bootstrap.sh` / `bootstrap.ps1` | One-command install from anywhere | `bootstrap.sh`, `bootstrap.ps1` |
@@ -228,7 +228,7 @@ article's engine via a 14-function public C API:
 | `deploy/` | LAN deployment stack (Caddy + gateway + router + workspace) | `deploy/` |
 | `packaging/` | Homebrew / MSVC / RPM recipes | `packaging/` |
 
-The 14 public C functions (`include/libk3/libk3.h`):
+The 14 public C functions (`include/liblitmoe/liblitmoe.h`):
 
 ```
 k3_open · k3_close · k3_step · k3_generate
@@ -309,7 +309,7 @@ matching tokenizer.
 ## Repository layout
 
 ```
-kimi-k3-lean/
+litMoE/
 ├── README.md                       this file
 ├── LICENSE                         Apache 2.0
 ├── CODE_OF_CONDUCT.md               Contributor Covenant 2.1
@@ -334,8 +334,8 @@ kimi-k3-lean/
 │
 ├── include/
 │   ├── k3/                         article's public headers
-│   └── libk3/
-│       ├── libk3.h                 public C API (the seam)
+│   └── liblitmoe/
+│       ├── liblitmoe.h                 public C API (the seam)
 │       └── k3_internal.h           private header
 │
 ├── src/                            article's C engine, refactored
@@ -349,7 +349,7 @@ kimi-k3-lean/
 │
 ├── bin/
 │   ├── k3                          CLI (167 KB)
-│   └── libk3.so                    shared library (162 KB)
+│   └── liblitmoe.so                    shared library (162 KB)
 │
 ├── serve/                          OpenAI Chat Completions server
 │   ├── __main__.py                 argparse CLI
@@ -361,7 +361,7 @@ kimi-k3-lean/
 ├── scripts/
 │   ├── setup-and-serve.sh          one-command everything (clone → serve)
 │   ├── setup-and-serve.ps1         Windows counterpart
-│   ├── download-model.sh           article's HuggingFace downloader (resumable)
+│   ├── fetch-model.sh           article's HuggingFace downloader (resumable)
 │   └── pack-trunk.sh               trunk packer
 │
 ├── tools/                          converters, verifiers
@@ -376,9 +376,9 @@ kimi-k3-lean/
 │   └── ...
 │
 ├── packaging/                      distribution recipes
-│   ├── homebrew/kimi-k3-lean.rb    formula
+│   ├── homebrew/litMoE.rb    formula
 │   ├── windows/build-msi.ps1       WiX MSI builder
-│   ├── rpm/kimi-k3-lean.spec      RPM spec
+│   ├── rpm/litMoE.spec      RPM spec
 │   └── README.md                   index
 │
 ├── deploy/                         network deployment (Caddy + gateway + router)
@@ -387,7 +387,7 @@ kimi-k3-lean/
 │   ├── gateway/                    bearer-token auth + body cap
 │   ├── router/                     multi-model dispatch
 │   ├── workspace/                  model browser + static installer
-│   ├── model/                      kimi-k3-lean runtime image
+│   ├── model/                      litMoE runtime image
 │   ├── static/                     laptop installer bundle
 │   └── README.md                  full deployment guide
 │
@@ -405,7 +405,7 @@ kimi-k3-lean/
 
 ## Performance
 
-Memory budgets per preset, read directly from `./bin/k3 --list-presets`:
+Memory budgets per preset, read directly from `./bin/litmoe --list-presets`:
 
 | Preset | Trunk (GB) | Expert cache (GB) | Peak RSS | Notes |
 |---|---:|---:|---:|---|
@@ -468,7 +468,7 @@ output across the whole 8 → 224 GB RAM ladder.
 
 The article's `k3_*` API is C-callable; Python ctypes is stdlib and
 cross-platform. No need for a third FFI (pybind11, cffi, Rust) or a
-build step in CI. Two pieces (`libk3.so` + Python `engine.py`)
+build step in CI. Two pieces (`liblitmoe.so` + Python `engine.py`)
 and the seam is done.
 
 ### Why stdlib HTTP?
@@ -502,7 +502,7 @@ resume from `POST /v1/state/load`.
   borrowed from
   the llm-server project.
 
-The combined engine, the `libk3.so` seam, the cross-platform
+The combined engine, the `liblitmoe.so` seam, the cross-platform
 packaging, the LAN deployment stack, and everything new in this repo
 is Apache-2.0.
 

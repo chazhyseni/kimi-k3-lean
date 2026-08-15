@@ -1,4 +1,4 @@
-# kimi-k3-lean gateway — auth + size limits + reverse proxy.
+# litMoE gateway — auth + size limits + reverse proxy.
 # Pairs with the LiteLLM-style router in deploy/router/.
 FROM python:3.11-slim-bookworm
 
@@ -23,6 +23,6 @@ sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
 
-LABEL org.opencontainers.image.title="kimi-k3-lean-gateway" \
-      org.opencontainers.image.source="https://github.com/chazhyseni/kimi-k3-lean" \
+LABEL org.opencontainers.image.title="litMoE-gateway" \
+      org.opencontainers.image.source="https://github.com/chazhyseni/litMoE" \
       org.opencontainers.image.licenses="Apache-2.0"

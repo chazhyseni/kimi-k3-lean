@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 # Default model name returned in /v1/models. Override via the request if the
 # client sends a specific model.
-DEFAULT_MODEL = "kimi-k3-lean"
+DEFAULT_MODEL = "litMoE"
 
 
 # ---------------------------------------------------------------------------- request
@@ -44,7 +44,7 @@ class ChatRequest:
     frequency_penalty: float = 0.0     # accepted but not used
     seed: int | None = None            # accepted; ignored
     n: int = 1                         # accepted; v1 always returns 1
-    # Non-OpenAI fields (pass-through, used by kimi-k3-lean).
+    # Non-OpenAI fields (pass-through, used by litMoE).
     top_k: int = -1                    # engine-specific; -1 = default
     incremental: bool = True           # engine carries KV cache between turns
     state: str | None = None           # engine-specific; state file path
@@ -245,7 +245,7 @@ def build_models_list(model_id: str = DEFAULT_MODEL) -> dict:
                 "id": model_id,
                 "object": "model",
                 "created": int(time.time()),
-                "owned_by": "kimi-k3-lean",
+                "owned_by": "litMoE",
                 "permission": [],
             },
         ],

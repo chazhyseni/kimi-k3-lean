@@ -41,7 +41,7 @@ FIX_ST = os.path.join(FIXTURES, "st")
 FIX_GOLDEN = os.path.join(FIXTURES, "golden")
 
 REF_K3_JSON = os.path.join(FIXTURES, "ref_k3.json")
-TINY_K3_BIN = os.path.join(FIXTURES, "tiny_k3.bin")
+TINY_LITMOE_BIN = os.path.join(FIXTURES, "tiny_k3.bin")
 
 
 def ensure(path: str) -> str:
@@ -70,7 +70,7 @@ def hf_dir() -> str | None:
         os.path.join(ROOT, "kimi_k3_hf", "files"),
         os.path.join(os.path.dirname(ROOT), "kimi_k3_hf", "files"),
         os.path.join(home, "k3model"),
-        os.path.join(home, "k3", "hf"),
+        os.path.join(home, "litmoe", "hf"),
         os.path.join(home, "k3c", "hf_files"),
     ]
     for c in candidates:

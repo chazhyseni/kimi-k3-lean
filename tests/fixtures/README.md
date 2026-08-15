@@ -33,7 +33,7 @@ python tools/make_st_fixture.py      # st/
 ```
 
 `expert_trace.bin` cannot be regenerated without the real checkpoint; capture a new one
-with `./bin/k3 <model_dir> --dump-cache-trace tests/fixtures ...`.
+with `./bin/litmoe <model_dir> --dump-cache-trace tests/fixtures ...`.
 
 ## Why these fixtures and not simpler ones
 

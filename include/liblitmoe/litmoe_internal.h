@@ -1,8 +1,8 @@
 /* k3_internal.h -- private header that exposes the engine internals (formerly
- * static in cli/k3_run.c) to the libk3 shared library.
+ * static in cli/k3_run.c) to the liblitmoe shared library.
  *
- * This is internal: the public API is in libk3/libk3.h. Nothing outside
- * the libk3 shared library should include this header.
+ * This is internal: the public API is in liblitmoe/litmoe.h. Nothing outside
+ * the liblitmoe shared library should include this header.
  *
  * The split is: cli/k3_run.c keeps the CLI's main() and arg parsing. The
  * rest of the model-level code (open, weights, forward, save/load, presets)
@@ -13,7 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "libk3/libk3.h"  /* for k3_ctx */
+#include "litmoe.h"  /* for k3_ctx */
 #include "k3.h"
 #include "k3_bind.h"
 #include "k3_cache.h"

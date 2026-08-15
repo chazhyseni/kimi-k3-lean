@@ -1,6 +1,6 @@
-# kimi-k3-lean — Network Deployment
+# litMoE — Network Deployment
 
-Run kimi-k3-lean as a multi-user LAN or VPN service so that laptops,
+Run litMoE as a multi-user LAN or VPN service so that laptops,
 phones, browsers, and agent CLIs (Claude Code, Pi, OpenCode, aider,
 Qwen Code) all share one local inference server.
 
@@ -9,13 +9,13 @@ LAN clients (browser / agent CLI / scripts)
         │  HTTPS :443  (only published port)
         ▼
    Caddy reverse proxy ── TLS + routing
-   ├─ /v1/*         ──► gateway ──► router ──► kimi-k3-lean backend
+   ├─ /v1/*         ──► gateway ──► router ──► litMoE backend
    ├─ /workspace/*  ──► model browser page
    ├─ /client/*     ──► laptop installer (curl one-liner)
    └─ /             ──► Open WebUI (browser chat, optional)
 ```
 
-This is the kimi-k3-lean analogue of /mnt/scratch/private-llm/ in the
+This is the litMoE analogue of /mnt/scratch/private-llm/ in the
 llm-server deployment. Same architecture, smaller scope, no GPU, no
 vLLM, no LiteLLM. The router replaces LiteLLM (LiteLLM is for
 translating OpenAI ↔ Anthropic ↔ etc.; we don`t need that). The
@@ -23,19 +23,19 @@ gateway has the same auth/size-limit/streaming pattern.
 
 ## One-command bring-up
 
-After `bootstrap.sh` has installed the `kimi-k3-lean` launcher:
+After `bootstrap.sh` has installed the `litMoE` launcher:
 
 ```bash
 # bare server (Caddy + gateway + model, no chat UI)
-kimi-k3-lean stack up
+litMoE stack up
 
 # full stack including Open WebUI for browser chats
-kimi-k3-lean stack up --webui
+litMoE stack up --webui
 
 # tear down
-kimi-k3-lean stack down
-kimi-k3-lean stack status
-kimi-k3-lean stack logs gateway
+litMoE stack down
+litMoE stack status
+litMoE stack logs gateway
 ```
 
 This is a thin wrapper around `docker compose -f deploy/compose.yml`.
@@ -126,7 +126,7 @@ source ~/llm-client/remote-env.sh        # every session
 
 curl -k https://YOUR_SERVER_IP/v1/models -H "Authorization: Bearer $INTERNAL_API_KEY"
 
-claude                                   # Claude Code now talks to kimi-k3-lean
+claude                                   # Claude Code now talks to litMoE
 opencode run -m kimi-k3 "hello"          # OpenCode does the same
 qwen -p "hi"                             # Qwen Code does the same
 ```
@@ -208,7 +208,7 @@ URL prefixes to backends:
 - `/api/models` — JSON model list.
 - `/client/*` — static installer files.
 
-### Model backend (the kimi-k3-lean image)
+### Model backend (the litMoE image)
 - Loads the checkpoint from `/data` (mounted bind/volume).
 - Serves OpenAI chat completions + state endpoints over HTTP.
 - Health check on `/health`.
@@ -234,7 +234,7 @@ requests based on the `model:` field in the request body.
 - Not a public cloud gateway. For multi-region / cloud-native, use a
   proper inference platform (Modal, RunPod, etc.) with their tooling.
 - Not a replacement for vLLM. If you have a GPU and want to serve
-  Qwen3, Llama, or Mistral at full speed, use vLLM directly. kimi-k3-lean
+  Qwen3, Llama, or Mistral at full speed, use vLLM directly. litMoE
   is for **CPU-friendly OpenAI-compatible serving**, specifically the
   Kimi K3 engine which has no GPU path.
 - Not certified for HIPAA / SOC2 / etc. The gateway stores no prompt

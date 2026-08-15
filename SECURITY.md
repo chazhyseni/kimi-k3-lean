@@ -20,7 +20,7 @@ The model WEIGHTS themselves are not a trust boundary this engine can defend: a
 checkpoint with valid structure and hostile parameter values will produce hostile output,
 and no parser check can prevent that.
 
-`scripts/download-model.sh` verifies the checkpoint against its published **sizes**
+`scripts/fetch-model.sh` verifies the checkpoint against its published **sizes**
 shard count, summed byte total, and every per-shard size. Note the limit: a size check
 detects truncation and short reads, but not a substituted shard of identical length,
 which is exactly the crafted-checkpoint case this section is about. Verify against

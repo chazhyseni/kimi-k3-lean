@@ -27,7 +27,7 @@ HOW IT READS THE CHECKPOINT
     that are present.
 
 usage: budget.py <model_dir>
-       budget.py            (reads $K3_MODEL_DIR)
+       budget.py            (reads $LITMOE_MODEL_DIR)
 """
 from __future__ import annotations
 
@@ -99,10 +99,10 @@ def read_header(path: str) -> dict:
 
 
 def main():
-    root = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("K3_MODEL_DIR", "")
+    root = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("LITMOE_MODEL_DIR", "")
     if not root:
         print("usage: budget.py <model_dir>")
-        print("       or set K3_MODEL_DIR")
+        print("       or set LITMOE_MODEL_DIR")
         return 2
 
     files = sorted(glob.glob(os.path.join(root, "*.safetensors")))

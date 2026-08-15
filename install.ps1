@@ -1,16 +1,16 @@
 <#
-install.ps1 — install kimi-k3-lean to a prefix on Windows.
+install.ps1 — install litMoE to a prefix on Windows.
 #
 # Usage:
-#   .\install.ps1                                       # installs to C:\Program Files\kimi-k3-lean (requires admin)
-#   .\install.ps1 -Prefix C:\Users\you\kimi-k3-lean    # user-level install, no admin
+#   .\install.ps1                                       # installs to C:\Program Files\litMoE (requires admin)
+#   .\install.ps1 -Prefix C:\Users\you\litMoE    # user-level install, no admin
 #   .\install.ps1 -BuildType Release -Jobs 8
 #
 # What it installs:
 #   bin\k3.exe                       CLI binary
 #   lib\k3.dll                       shared library (Python uses via ctypes)
 #   lib\k3_static.lib                static library for embedding
-#   include\libk3\libk3.h            public C API
+#   include\liblitmoe\liblitmoe.h            public C API
 #
 # Tested:
 #   - NOT tested on this host (this host is Linux). The script follows the
@@ -20,7 +20,7 @@ install.ps1 — install kimi-k3-lean to a prefix on Windows.
 #
 [CmdletBinding()]
 param(
-    [string]$Prefix = "C:\Program Files\kimi-k3-lean",
+    [string]$Prefix = "C:\Program Files\litMoE",
     [ValidateSet("Release", "Debug", "RelWithDebInfo", "MinSizeRel")]
     [string]$BuildType = "Release",
     [int]$Jobs = [Environment]::ProcessorCount
@@ -50,7 +50,7 @@ function Test-MSVC() {
 }
 
 # --------------------------------------------------------------- check toolchain
-Write-Host "==> kimi-k3-lean installer (Windows)"
+Write-Host "==> litMoE installer (Windows)"
 Write-Host "    prefix:     $Prefix"
 Write-Host "    build type: $BuildType"
 Write-Host "    jobs:       $Jobs"
@@ -127,7 +127,7 @@ try {
 Write-Host "==> Verifying installation..."
 $installedBin  = Join-Path $Prefix "bin\k3.exe"
 $installedLib  = Join-Path $Prefix "lib\k3.dll"
-$installedHdr  = Join-Path $Prefix "include\libk3\libk3.h"
+$installedHdr  = Join-Path $Prefix "include\liblitmoe\liblitmoe.h"
 
 if (-not (Test-Path $installedBin)) { Write-Host "ERROR: $installedBin missing" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path $installedLib)) { Write-Host "ERROR: $installedLib missing" -ForegroundColor Red; exit 1 }

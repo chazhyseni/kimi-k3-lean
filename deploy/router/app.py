@@ -1,4 +1,4 @@
-"""router — multi-model OpenAI-compatible router for kimi-k3-lean.
+"""router — multi-model OpenAI-compatible router for litMoE.
 
 WHAT THIS IS
   Sits in front of one or more model backends. The model backends are
@@ -15,7 +15,7 @@ second backend (Linear, a future Kimi variant, an Anthropic-format
 translator, etc.), you list it in `MODELS` env and the router handles
 both.
 
-This is the kimi-k3-lean analogue of LiteLLM in the llm-server stack,
+This is the litMoE analogue of LiteLLM in the llm-server stack,
 but stripped to OpenAI-only (no Anthropic translation — there's no need
 for it here). The Python `openai` SDK, Open WebUI, aider, Claude Code
 all speak OpenAI natively.
@@ -44,7 +44,7 @@ _raw_models = os.environ.get("MODELS", '{"kimi-k3":"http://k3:8080/v1"}')
 MODELS: dict[str, str] = json.loads(_raw_models)
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", next(iter(MODELS), "kimi-k3"))
 
-app = FastAPI(title="kimi-k3-lean router", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="litMoE router", docs_url=None, redoc_url=None, openapi_url=None)
 
 client = httpx.AsyncClient(
     timeout=httpx.Timeout(connect=30.0, read=1800.0, write=1800.0, pool=30.0)
@@ -75,7 +75,7 @@ async def list_models() -> dict:
     return {
         "object": "list",
         "data": [
-            {"id": name, "object": "model", "owned_by": "kimi-k3-lean"}
+            {"id": name, "object": "model", "owned_by": "litMoE"}
             for name in MODELS
         ],
     }

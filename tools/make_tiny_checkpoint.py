@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""make_tiny_checkpoint.py - turn the tiny oracle model into a ./bin/k3 checkpoint.
+"""make_tiny_checkpoint.py - turn the tiny oracle model into a ./bin/litmoe checkpoint.
 
 The engine's streaming loader (k3_load.c) refuses any expert whose logical width is
 not divisible by the MXFP4 group size 32. The default tiny_config() uses
@@ -248,7 +248,7 @@ def main():
           (len(cfg.full_attn_layers), cfg.full_attn_layers, cfg.first_k_dense_replace))
 
     # ---- transform the model's weights to exactly what the shards will hold, so
-    # the torch forward is the TRUE answer for the bytes bin/k3 reads ----
+    # the torch forward is the TRUE answer for the bytes bin/litmoe reads ----
     with torch.no_grad():
         for name, p in model.named_parameters():
             w = p.detach().float().cpu().numpy()

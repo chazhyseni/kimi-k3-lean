@@ -8,20 +8,20 @@
 #   ./scripts/setup-and-serve.sh --convert-only     convert checkpoint only
 #   ./scripts/setup-and-serve.sh --serve-only       start the server
 #   ./scripts/setup-and-serve.sh --help
-#   ./scripts/setup-and-serve.sh --build-only       build libk3.so + the CLI
+#   ./scripts/setup-and-serve.sh --build-only       build liblitmoe.so + the CLI
 #   ./scripts/setup-and-serve.sh --download-only    download weights
 #   ./scripts/setup-and-serve.sh --convert-only     convert the checkpoint
 #   ./scripts/setup-and-serve.sh --serve-only       start the server (assumes model + build exist)
 #   ./scripts/setup-and-serve.sh --install-deps    install OS-level prerequisites first
 #
 # Environment variables:
-#   K3_MODEL_DIR    checkpoint directory (default: ./checkpoints/k3)
-#   K3_PRESET       memory preset (default: auto)
-#   K3_HOST         bind host (default: 127.0.0.1)
-#   K3_PORT         bind port (default: 8080)
-#   K3_API_KEY      bearer token (default: empty; required if binding non-loopback)
-#   K3_MAX_TOKENS   default max_tokens per request (default: 256)
-#   K3_LOG_REQUESTS log each request (default: empty)
+#   LITMOE_MODEL_DIR    checkpoint directory (default: ./checkpoints/k3)
+#   LITMOE_PRESET       memory preset (default: auto)
+#   LITMOE_HOST         bind host (default: 127.0.0.1)
+#   LITMOE_PORT         bind port (default: 8080)
+#   LITMOE_API_KEY      bearer token (default: empty; required if binding non-loopback)
+#   LITMOE_MAX_TOKENS   default max_tokens per request (default: 256)
+#   LITMOE_LOG_REQUESTS log each request (default: empty)
 #   SKIP_DOWNLOAD   if 1, do not download weights
 #   SKIP_CONVERT    if 1, do not convert weights
 #
@@ -40,13 +40,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ----------------------- defaults -----------------------
-K3_MODEL_DIR="${K3_MODEL_DIR:-${REPO_ROOT}/checkpoints/k3}"
-K3_PRESET="${K3_PRESET:-auto}"
-K3_HOST="${K3_HOST:-127.0.0.1}"
-K3_PORT="${K3_PORT:-8080}"
-K3_API_KEY="${K3_API_KEY:-}"
-K3_MAX_TOKENS="${K3_MAX_TOKENS:-256}"
-K3_LOG_REQUESTS="${K3_LOG_REQUESTS:-}"
+LITMOE_MODEL_DIR="${LITMOE_MODEL_DIR:-${REPO_ROOT}/checkpoints/k3}"
+LITMOE_PRESET="${LITMOE_PRESET:-auto}"
+LITMOE_HOST="${LITMOE_HOST:-127.0.0.1}"
+LITMOE_PORT="${LITMOE_PORT:-8080}"
+LITMOE_API_KEY="${LITMOE_API_KEY:-}"
+LITMOE_MAX_TOKENS="${LITMOE_MAX_TOKENS:-256}"
+LITMOE_LOG_REQUESTS="${LITMOE_LOG_REQUESTS:-}"
 SKIP_DOWNLOAD="${SKIP_DOWNLOAD:-0}"
 SKIP_CONVERT="${SKIP_CONVERT:-0}"
 
@@ -155,7 +155,7 @@ install_deps() {
 # ----------------------- subroutines -----------------------
 
 build() {
-    note "building libk3.so and bin/k3"
+    note "building liblitmoe.so and bin/litmoe"
     require_tool make
     require_tool gcc
     require_tool python3
@@ -174,40 +174,40 @@ build() {
 
     LDFLAGS="-lm -pthread" make -j"${jobs}" all
 
-    if [ ! -f bin/libk3.so ]; then
-        die "build did not produce bin/libk3.so" 1
+    if [ ! -f bin/liblitmoe.so ]; then
+        die "build did not produce bin/liblitmoe.so" 1
     fi
-    if [ ! -f bin/k3 ]; then
-        die "build did not produce bin/k3" 1
+    if [ ! -f bin/litmoe ]; then
+        die "build did not produce bin/litmoe" 1
     fi
     ok "build OK"
 }
 
 download() {
-    note "downloading Kimi K3 weights to ${K3_MODEL_DIR}"
+    note "downloading Kimi K3 weights to ${LITMOE_MODEL_DIR}"
     cd "${REPO_ROOT}"
-    mkdir -p "${K3_MODEL_DIR}"
-    bash scripts/download-model.sh "${K3_MODEL_DIR}"
+    mkdir -p "${LITMOE_MODEL_DIR}"
+    bash scripts/fetch-model.sh "${LITMOE_MODEL_DIR}"
     ok "download OK"
 }
 
 convert() {
-    note "converting checkpoint at ${K3_MODEL_DIR}"
-    if [ ! -d "${K3_MODEL_DIR}" ]; then
-        die "checkpoint directory missing: ${K3_MODEL_DIR}. " \
+    note "converting checkpoint at ${LITMOE_MODEL_DIR}"
+    if [ ! -d "${LITMOE_MODEL_DIR}" ]; then
+        die "checkpoint directory missing: ${LITMOE_MODEL_DIR}. " \
             "run ./scripts/setup-and-serve.sh --download-only first." 4
     fi
     cd "${REPO_ROOT}"
 
-    local native_dir="${K3_NATIVE_DIR:-${K3_MODEL_DIR}-native}"
+    local native_dir="${K3_NATIVE_DIR:-${LITMOE_MODEL_DIR}-native}"
 
     # Prefer Python-native convert (no Docker required).
     if command -v python3 >/dev/null 2>&1 && python3 -c "import safetensors" 2>/dev/null; then
         note "using python3 tools/convert.py (no Docker required)"
-        python3 tools/convert.py "${K3_MODEL_DIR}" "${native_dir}"
+        python3 tools/convert.py "${LITMOE_MODEL_DIR}" "${native_dir}"
         ok "convert OK: ${native_dir}"
-        # Point K3_MODEL_DIR at the converted dir so the engine loads it.
-        echo "${native_dir}" > "${K3_MODEL_DIR}/.native-path"
+        # Point LITMOE_MODEL_DIR at the converted dir so the engine loads it.
+        echo "${native_dir}" > "${LITMOE_MODEL_DIR}/.native-path"
         return 0
     fi
 
@@ -216,7 +216,7 @@ convert() {
         note "using Docker (Dockerfile.convert)"
         docker build -f Dockerfile.convert -t kimi-k3-convert .
         docker run --rm \
-            -v "${K3_MODEL_DIR}:/data:rw" \
+            -v "${LITMOE_MODEL_DIR}:/data:rw" \
             -v "${REPO_ROOT}:/out:rw" \
             kimi-k3-convert \
             python3 /src/tools/convert.py /data /out/checkpoints/k3-native
@@ -248,29 +248,29 @@ serve() {
         die "model directory not found: ${model_path}" 4
     fi
 
-    note "starting kimi-k3-lean OpenAI server"
+    note "starting litMoE OpenAI server"
     note "  model:    ${model_path}"
-    note "  preset:   ${K3_PRESET}"
-    note "  endpoint: http://${K3_HOST}:${K3_PORT}/v1"
-    note "  api key:  ${K3_API_KEY:-(none — server is open. do not expose to network.)}"
+    note "  preset:   ${LITMOE_PRESET}"
+    note "  endpoint: http://${LITMOE_HOST}:${LITMOE_PORT}/v1"
+    note "  api key:  ${LITMOE_API_KEY:-(none — server is open. do not expose to network.)}"
 
     # Refuse to bind non-loopback without auth.
-    if [ "${K3_HOST}" != "127.0.0.1" ] && [ "${K3_HOST}" != "::1" ] && [ -z "${K3_API_KEY}" ]; then
-        warn "binding to non-loopback (${K3_HOST}) without --api-key is unsafe."
+    if [ "${LITMOE_HOST}" != "127.0.0.1" ] && [ "${LITMOE_HOST}" != "::1" ] && [ -z "${LITMOE_API_KEY}" ]; then
+        warn "binding to non-loopback (${LITMOE_HOST}) without --api-key is unsafe."
         warn "any host on the network can use this server."
-        warn "set K3_API_KEY or pass --api-key to require a bearer token."
+        warn "set LITMOE_API_KEY or pass --api-key to require a bearer token."
         sleep 3
     fi
 
     local args=(
         "${model_path}"
-        "--preset" "${K3_PRESET}"
-        "--host" "${K3_HOST}"
-        "--port" "${K3_PORT}"
-        "--max-tokens" "${K3_MAX_TOKENS}"
+        "--preset" "${LITMOE_PRESET}"
+        "--host" "${LITMOE_HOST}"
+        "--port" "${LITMOE_PORT}"
+        "--max-tokens" "${LITMOE_MAX_TOKENS}"
     )
-    [ -n "${K3_API_KEY}" ]      && args+=("--api-key" "${K3_API_KEY}")
-    [ -n "${K3_LOG_REQUESTS}" ] && args+=("--log-requests")
+    [ -n "${LITMOE_API_KEY}" ]      && args+=("--api-key" "${LITMOE_API_KEY}")
+    [ -n "${LITMOE_LOG_REQUESTS}" ] && args+=("--log-requests")
 
     cd "${REPO_ROOT}"
     exec env \
@@ -305,4 +305,4 @@ if [ "${BUILD_ONLY}" -eq 1 ] || [ "${DOWNLOAD_ONLY}" -eq 1 ] || [ "${CONVERT_ONL
     exit 0
 fi
 
-serve "${K3_MODEL_DIR}"
+serve "${LITMOE_MODEL_DIR}"

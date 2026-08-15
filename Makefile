@@ -1,6 +1,6 @@
 # Kimi K3 inference engine.
 #
-#   make                build the engine (bin/k3)
+#   make                build the engine (bin/litmoe)
 #   make test           run every test that needs no model weights
 #   make bench          kernel microbenchmarks
 #   make portable       build without -march/-mcpu=native (for distribution)
@@ -88,7 +88,7 @@ LDFLAGS  ?= -lm $(OMP_LDFLAGS) -pthread
 
 # Flat include search across the module dirs: sources use "k3.h", "k3_cache.h" etc
 # rather than path-qualified includes, which keeps them relocatable.
-INCLUDES := -Iinclude -Iinclude/k3 -Iinclude/libk3 -Ithird_party \
+INCLUDES := -Iinclude -Iinclude/k3 -Iinclude/liblitmoe -Ithird_party \
             -Isrc/core -Isrc/io -Isrc/cache -Isrc/model -Isrc/tokenizer -Isrc/lib
 
 # ----------------------------------------------------------------------------- files --
@@ -100,11 +100,11 @@ ENGINE_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(ENGINE_SRC))
 
 LIBK3_SRC  := src/lib/k3_engine.c src/lib/k3_api.c
 LIBK3_OBJ  := $(patsubst %.c,$(BUILD)/%.o,$(LIBK3_SRC))
-LIBK3_SO   := $(BIN)/libk3.so
-LIBK3_A    := $(BIN)/libk3.a
+LIBK3_SO   := $(BIN)/liblitmoe.so
+LIBK3_A    := $(BIN)/liblitmoe.a
 
 CLI_SRC    := src/cli/k3_run.c
-CLI_BIN    := $(BIN)/k3
+CLI_BIN    := $(BIN)/litmoe
 
 # Tests that need no checkpoint. These run in CI on every push.
 UNIT_TESTS := test_ops test_cache test_st test_cfg test_tok scale_test k3_model
@@ -123,7 +123,7 @@ TOK_FILES  ?= $(HOME)/k3model
 
 # ---------------------------------------------------------------------------- targets --
 .PHONY: all test test-all bench portable debug asan ubsan format clean install help \
-        tok cfg ops cache st oracle weights-test libk3
+        tok cfg ops cache st oracle weights-test liblitmoe
 
 all: $(CLI_BIN) $(LIBK3_SO)
 
@@ -140,7 +140,7 @@ $(LIBK3_SO): $(ENGINE_OBJ) $(LIBK3_OBJ) | $(BIN)
 $(LIBK3_A): $(ENGINE_OBJ) $(LIBK3_OBJ) | $(BIN)
 	$(AR) rcs $@ $(ENGINE_OBJ) $(LIBK3_OBJ)
 
-libk3: $(LIBK3_SO) $(LIBK3_A)
+liblitmoe: $(LIBK3_SO) $(LIBK3_A)
 
 $(BIN):
 	@mkdir -p $(BIN)
@@ -270,10 +270,10 @@ format:
 install: $(CLI_BIN) $(LIBK3_SO) $(LIBK3_SO)
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -d $(DESTDIR)$(PREFIX)/lib
-	install -d $(DESTDIR)$(PREFIX)/include/libk3
-	install -m 755 $(CLI_BIN) $(DESTDIR)$(PREFIX)/bin/k3
-	install -m 755 $(LIBK3_SO) $(DESTDIR)$(PREFIX)/lib/libk3.so
-	install -m 644 include/libk3/libk3.h $(DESTDIR)$(PREFIX)/include/libk3/libk3.h
+	install -d $(DESTDIR)$(PREFIX)/include/liblitmoe
+	install -m 755 $(CLI_BIN) $(DESTDIR)$(PREFIX)/bin/litmoe
+	install -m 755 $(LIBK3_SO) $(DESTDIR)$(PREFIX)/lib/liblitmoe.so
+	install -m 644 include/liblitmoe/litmoe.h $(DESTDIR)$(PREFIX)/include/liblitmoe/litmoe.h
 	install -d $(DESTDIR)$(PREFIX)/include/k3
 	install -m 644 include/k3/*.h $(DESTDIR)$(PREFIX)/include/k3/
 	install -m 644 third_party/json.h $(DESTDIR)$(PREFIX)/include/k3/

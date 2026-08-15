@@ -1,24 +1,24 @@
-# Homebrew formula for kimi-k3-lean.
+# Homebrew formula for litMoE.
 #
 # Install via a personal tap:
-#   brew tap chazhyseni/kimi-k3-lean https://github.com/chazhyseni/homebrew-kimi-k3-lean
-#   brew install kimi-k3-lean
+#   brew tap chazhyseni/litMoE https://github.com/chazhyseni/homebrew-litMoE
+#   brew install litMoE
 #
 # Once installed:
 #   k3 --help
 #   python3 -m serve /path/to/checkpoint --port 8080 --preset server
 #
-# This formula is published in the chazhyseni/homebrew-kimi-k3-lean tap.
+# This formula is published in the chazhyseni/homebrew-litMoE tap.
 # The tap repo's only job is to host this file; the binaries it points
 # at are the GitHub release artifacts built by .github/workflows/release.yml.
 
 class KimiK3Lean < Formula
   desc "Lean OpenAI-compatible server for Kimi K3 — disk-resident, CPU-only"
-  homepage "https://github.com/chazhyseni/kimi-k3-lean"
-  url "https://github.com/chazhyseni/kimi-k3-lean/archive/refs/tags/v0.6.8.tar.gz"
+  homepage "https://github.com/chazhyseni/litMoE"
+  url "https://github.com/chazhyseni/litMoE/archive/refs/tags/v0.6.8.tar.gz"
   sha256 "PLACEHOLDER_SHA256"  # updated by the release workflow
   license "Apache-2.0"
-  head "https://github.com/chazhyseni/kimi-k3-lean.git", branch: "main"
+  head "https://github.com/chazhyseni/litMoE.git", branch: "main"
 
   # Platform support. macOS on Apple Silicon is the primary target; Intel
   # and Linux are supported via the same release artifacts.
@@ -46,7 +46,7 @@ class KimiK3Lean < Formula
     # the symlinks in $(brew --prefix)/lib, but the kernel-level
     # DYLD_LIBRARY_PATH for one-off launches is occasionally useful.
     # We don't set it permanently — that would interfere with other tools.
-    ohai "kimi-k3-lean installed. Run 'k3 --help' to verify."
+    ohai "litMoE installed. Run 'k3 --help' to verify."
   end
 
   test do
@@ -56,7 +56,7 @@ class KimiK3Lean < Formula
 
     # Verify the shared library exports its public API.
     require "open3"
-    out, _err, status = Open3.capture3("nm", "-D", "--defined-only", "#{lib}/libk3.dylib")
+    out, _err, status = Open3.capture3("nm", "-D", "--defined-only", "#{lib}/liblitmoe.dylib")
     assert status.success?, "nm failed: #{out}"
     %w[k3_open k3_close k3_step k3_generate k3_tokenize k3_detokenize
        k3_save_state k3_load_state k3_get_stats k3_reset_stats

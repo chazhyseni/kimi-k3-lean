@@ -1,6 +1,6 @@
 /* k3_api.c -- the public C API for the Kimi K3 engine.
  *
- * Implements the contracts declared in libk3/libk3.h. The implementations
+ * Implements the contracts declared in liblitmoe/litmoe.h. The implementations
  * call into the engine code in lib/k3_engine.c (which was extracted from
  * cli/k3_run.c). Lifecycle, configure, generate, state save/load.
  *
@@ -26,13 +26,13 @@
 #include "k3_cfg.h"
 #include "k3_st.h"
 
-#include "libk3/libk3.h"
-#include "libk3/k3_internal.h"
+#include "litmoe.h"
+#include "litmoe_internal.h"
 
 /* K3_MAX_PROMPT, K3_MAX_GEN come from include/k3/k3.h */
 
 /* Forward decls from k3_engine.c. The full definitions of Weights,
- * K3Preset, and K3StateHdr_inner are in include/libk3/k3_internal.h.
+ * K3Preset, and K3StateHdr_inner are in include/liblitmoe/litmoe_internal.h.
  * k3_api.c includes that header so the types are visible here. */
 
 

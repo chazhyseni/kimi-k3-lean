@@ -1,4 +1,4 @@
-# remote-env.sh — env vars the agent CLIs need to talk to kimi-k3-lean.
+# remote-env.sh — env vars the agent CLIs need to talk to litMoE.
 #
 # Source this every session before launching Claude Code / Pi / OpenCode /
 # aider / Qwen Code. It is shipped by the laptop installer and lives at
@@ -37,7 +37,7 @@ export ANTHROPIC_API_KEY="${INTERNAL_API_KEY:-}"
 # Verbose mode so `claude --debug-mode` shows the upstream URL on startup.
 export CLAUDE_CODE_DEBUG_MODE="${CLAUDE_CODE_DEBUG_MODE:-1}"
 
-echo "kimi-k3-lean env loaded:"
+echo "litMoE env loaded:"
 echo "  OPENAI_BASE_URL      = ${OPENAI_BASE_URL}"
 echo "  ANTHROPIC_BASE_URL   = ${ANTHROPIC_BASE_URL}"
 echo "  OPENAI_API_KEY       = ${OPENAI_API_KEY:0:8}..."

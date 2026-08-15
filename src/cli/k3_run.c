@@ -20,7 +20,7 @@
 #include <time.h>
 
 #include "k3.h"               /* for K3_VERSION */
-#include "libk3/libk3.h"
+#include "litmoe.h"
 
 /* ---- helpers ---- */
 
@@ -63,7 +63,7 @@ static void usage(FILE *f)
 "\n"
 "Memory is a dial, not a floor: the same model runs in 8 GB and in 224 GB and produces\n"
 "identical output. Give memory to the trunk before the expert cache, see\n"
-"docs/PERFORMANCE.md for why, and scripts/k3-doctor.sh to size this machine.\n"
+"docs/PERFORMANCE.md for why, and scripts/litmoe-doctor.sh to size this machine.\n"
 "(This build is the Option C refactor: many advanced flags are not yet wired.)\n");
 }
 
@@ -85,7 +85,7 @@ static void k3_preset_list(FILE *f)
     fprintf(f, "  %-12s %6s / %-6s  %s\n", "auto", "fit", "fit",
             "sizes both from this machine's free RAM, trunk-first. Recommended.");
     fprintf(f, "\nAll presets stream the trunk, so they need --trunk <packed_dir>.\n"
-               "Run scripts/k3-doctor.sh to see which one this machine fits.\n");
+               "Run scripts/litmoe-doctor.sh to see which one this machine fits.\n");
 }
 
 /* ---- main ---- */

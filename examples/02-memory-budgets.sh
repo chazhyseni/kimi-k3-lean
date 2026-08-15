@@ -13,7 +13,7 @@ OUT=$(mktemp -d)
 
 for preset in laptop desktop server; do
     echo "=== $preset ==="
-    ./bin/k3 "$MODEL" --trunk "$TRUNK" --preset "$preset" \
+    ./bin/litmoe "$MODEL" --trunk "$TRUNK" --preset "$preset" \
         --ids "$IDS" --gen 8 --incremental --out "$OUT/$preset.json" \
         | grep -E 's/token average|PEAK RSS'
 done

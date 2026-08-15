@@ -11,16 +11,16 @@
 #
 # Env vars:
 #   HF_TOKEN         optional auth token for higher rate limits
-#   K3_REVISION      pin to a specific commit (skip auto-detection)
-#   K3_SKIP_CHECKSUM skip checksum verification (sizes still checked)
-#   K3_PARALLEL      number of parallel downloads (default: 4)
+#   LITMOE_REVISION      pin to a specific commit (skip auto-detection)
+#   LITMOE_SKIP_CHECKSUM skip checksum verification (sizes still checked)
+#   LITMOE_PARALLEL      number of parallel downloads (default: 4)
 #   HF_VENV          path to the hf CLI venv (default: ~/.local/share/lean/hf-venv)
 
 set -euo pipefail
 
 DEST="${1:?usage: fetch-model.sh <dest_dir> [hf_repo_id]}"
 REPO="${2:-moonshotai/Kimi-K3}"
-PARALLEL="${K3_PARALLEL:-4}"
+PARALLEL="${LITMOE_PARALLEL:-4}"
 
 # Published totals for Kimi K3. For other models, these are fetched
 # from the HF API at runtime.
@@ -49,7 +49,7 @@ fi
 export PATH="$VENV/bin:$PATH"
 
 # ---- resolve commit ----
-REVISION="${K3_REVISION:-}"
+REVISION="${LITMOE_REVISION:-}"
 if [ -z "$REVISION" ]; then
     REVISION="$("$VENV/bin/python" -c \
         "from huggingface_hub import model_info; print(model_info('$REPO').sha)" 2>/dev/null)"
@@ -174,9 +174,9 @@ if [ -f "$SIZES" ]; then
 fi
 
 # Checksum verification (optional, slow)
-if [ "${K3_SKIP_CHECKSUM:-0}" != "1" ]; then
+if [ "${LITMOE_SKIP_CHECKSUM:-0}" != "1" ]; then
     echo
-    echo "verifying checksums (re-reads all data; set K3_SKIP_CHECKSUM=1 to skip)..."
+    echo "verifying checksums (re-reads all data; set LITMOE_SKIP_CHECKSUM=1 to skip)..."
     hf cache verify "$REPO" --revision "$REVISION" --local-dir "$DEST" \
         --fail-on-missing-files 2>/dev/null && echo "  ✓ checksums verified" || \
         echo "  ! checksum verification skipped (non-fatal)"

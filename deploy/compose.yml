@@ -1,4 +1,4 @@
-# kimi-k3-lean network deployment.
+# litMoE network deployment.
 #
 # Bring-up:
 #   cd deploy && docker compose --profile with-k3 up -d --build
@@ -16,7 +16,7 @@
 services:
   router:
     build: ./router
-    container_name: k3l-router
+    container_name: litmoe-router
     restart: unless-stopped
     environment:
       MODELS: |
@@ -27,7 +27,7 @@ services:
     expose:
       - "8080"
     networks:
-      - k3l
+      - litmoe
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -37,7 +37,7 @@ services:
 
   gateway:
     build: ./gateway
-    container_name: k3l-gateway
+    container_name: litmoe-gateway
     restart: unless-stopped
     environment:
       UPSTREAM_BASE_URL: http://router:8080/v1
@@ -51,7 +51,7 @@ services:
     expose:
       - "8080"
     networks:
-      - k3l
+      - litmoe
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -61,7 +61,7 @@ services:
 
   workspace:
     build: ./workspace
-    container_name: k3l-workspace
+    container_name: litmoe-workspace
     restart: unless-stopped
     environment:
       MODELS: |
@@ -74,7 +74,7 @@ services:
     expose:
       - "8080"
     networks:
-      - k3l
+      - litmoe
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -84,7 +84,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: k3l-caddy
+    container_name: litmoe-caddy
     restart: unless-stopped
     ports:
       # Only the HTTP and HTTPS ports are exposed to the LAN. Override
@@ -104,7 +104,7 @@ services:
       workspace:
         condition: service_healthy
     networks:
-      - k3l
+      - litmoe
 
   # ---------------------------------------------------------------------
   # Model backend — only started with `--profile with-k3`.
@@ -114,14 +114,14 @@ services:
     build:
       context: ..
       dockerfile: deploy/model/Dockerfile
-    container_name: k3l-model-k3
+    container_name: litmoe-model-k3
     restart: unless-stopped
     environment:
-      K3_HOST: 0.0.0.0
-      K3_PORT: 8080
-      K3_API_KEY: ${MODEL_API_KEY:-${INTERNAL_API_KEY}}
-      K3_PRESET: ${K3_PRESET:-auto}
-      K3_LOG_REQUESTS: "1"
+      LITMOE_HOST: 0.0.0.0
+      LITMOE_PORT: 8080
+      LITMOE_API_KEY: ${MODEL_API_KEY:-${INTERNAL_API_KEY}}
+      LITMOE_PRESET: ${LITMOE_PRESET:-auto}
+      LITMOE_LOG_REQUESTS: "1"
     volumes:
       # Mount your downloaded/converted checkpoint at /data.
       - ./checkpoints/k3:/data:ro
@@ -130,11 +130,11 @@ services:
         limits:
           # Adjust for your host. K3 expert weights are disk-resident;
           # only the trunk + LRU cache live in RAM.
-          memory: ${K3_MEMORY_LIMIT:-8G}
+          memory: ${LITMOE_MEMORY_LIMIT:-8G}
     expose:
       - "8080"
     networks:
-      - k3l
+      - litmoe
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
       interval: 30s
@@ -149,7 +149,7 @@ services:
   webui:
     profiles: ["with-webui"]
     image: ghcr.io/open-webui/open-webui:main
-    container_name: k3l-webui
+    container_name: litmoe-webui
     restart: unless-stopped
     environment:
       WEBUI_AUTH: "true"
@@ -164,10 +164,10 @@ services:
     expose:
       - "8080"
     networks:
-      - k3l
+      - litmoe
 
 networks:
-  k3l:
+  litmoe:
     driver: bridge
 
 volumes:

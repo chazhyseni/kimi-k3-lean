@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# install.sh — install kimi-k3-lean to a prefix.
+# install.sh — install litMoE to a prefix.
 #
 # Usage:
 #   ./install.sh                    # installs to /usr/local (requires sudo)
 #   ./install.sh PREFIX=$HOME/.local  # user-level install, no sudo
-#   PREFIX=/opt/kimi-k3-lean ./install.sh
+#   PREFIX=/opt/litMoE ./install.sh
 #
 # What it installs:
-#   bin/k3            CLI binary
-#   lib/libk3.so      shared library (Python server uses via ctypes)
-#   lib/libk3_static.a  static library (for embedding)
-#   include/libk3/libk3.h  public C API
+#   bin/litmoe            CLI binary
+#   lib/liblitmoe.so      shared library (Python server uses via ctypes)
+#   lib/liblitmoe_static.a  static library (for embedding)
+#   include/liblitmoe/liblitmoe.h  public C API
 #
 # Tested on:
 #   - Debian 11.11, glibc 2.31 (this host)
@@ -40,7 +40,7 @@ case "$OS" in
     *)          echo "Unsupported OS: $OS" >&2; exit 1 ;;
 esac
 
-echo "==> kimi-k3-lean installer"
+echo "==> litMoE installer"
 echo "    platform:    $PLATFORM"
 echo "    prefix:      $PREFIX"
 echo "    build type:  $BUILD_TYPE"
@@ -80,10 +80,10 @@ if [[ "$PLATFORM" == "linux" ]]; then
             LDCONF="$(mktemp)"
             echo "$PREFIX/lib" > "$LDCONF"
             if [[ -w /etc/ld.so.conf.d ]]; then
-                install -m 0644 "$LDCONF" /etc/ld.so.conf.d/kimi-k3-lean.conf
+                install -m 0644 "$LDCONF" /etc/ld.so.conf.d/litMoE.conf
                 ldconfig
             else
-                sudo install -m 0644 "$LDCONF" /etc/ld.so.conf.d/kimi-k3-lean.conf
+                sudo install -m 0644 "$LDCONF" /etc/ld.so.conf.d/litMoE.conf
                 sudo ldconfig
             fi
             rm -f "$LDCONF"
@@ -93,9 +93,9 @@ fi
 
 # --------------------------------------------------------------------------- verify
 echo "==> Verifying installation..."
-INSTALLED_K3="$PREFIX/bin/k3"
-INSTALLED_LIB="$PREFIX/lib/libk3.so"
-INSTALLED_HDR="$PREFIX/include/libk3/libk3.h"
+INSTALLED_K3="$PREFIX/bin/litmoe"
+INSTALLED_LIB="$PREFIX/lib/liblitmoe.so"
+INSTALLED_HDR="$PREFIX/include/liblitmoe/liblitmoe.h"
 
 if [[ ! -x "$INSTALLED_K3" ]]; then
     echo "==> ERROR: $INSTALLED_K3 not installed" >&2; exit 1

@@ -1,8 +1,8 @@
 """
-kimi-k3-lean engine bindings — ctypes wrapper around libk3.so.
+litMoE engine bindings — ctypes wrapper around liblitmoe.so.
 
 WHAT THIS IS
-  A Python interface to the libk3 shared library (the seam between the
+  A Python interface to the liblitmoe shared library (the seam between the
   C engine and this Python OpenAI server). Loads the library, exposes
   k3_open / k3_step / k3_generate / k3_close as a Python class.
 
@@ -57,44 +57,44 @@ from typing import Iterator, Optional
 
 _LIB_PATHS = [
     # In-source (development)
-    "bin/libk3.so",
-    "build/lib/libk3.so",
+    "bin/liblitmoe.so",
+    "build/lib/liblitmoe.so",
     # System installs.
-    "/usr/local/lib/libk3.so",
-    "/usr/lib/libk3.so",
+    "/usr/local/lib/liblitmoe.so",
+    "/usr/lib/liblitmoe.so",
     # User installs.
-    os.path.expanduser("~/.local/lib/libk3.so"),
+    os.path.expanduser("~/.local/lib/liblitmoe.so"),
     # Docker / system-packaged installs (deploy/model/Dockerfile puts it here).
-    "/opt/kimi-k3-lean/bin/libk3.so",
-    "/opt/kimi-k3-lean/bin/libk3.dylib",
-    "/opt/kimi-k3-lean/bin/k3.dll",
+    "/opt/litMoE/bin/liblitmoe.so",
+    "/opt/litMoE/bin/liblitmoe.dylib",
+    "/opt/litMoE/bin/litmoe.dll",
     # macOS install names (.dylib).
-    "bin/libk3.dylib",
-    "/usr/local/lib/libk3.dylib",
-    "/opt/homebrew/lib/libk3.dylib",
-    os.path.expanduser("~/.local/lib/libk3.dylib"),
+    "bin/liblitmoe.dylib",
+    "/usr/local/lib/liblitmoe.dylib",
+    "/opt/homebrew/lib/liblitmoe.dylib",
+    os.path.expanduser("~/.local/lib/liblitmoe.dylib"),
     # Windows.
-    "k3.dll",
-    "build/bin/Release/k3.dll",
-    "C:\\Program Files\\kimi-k3-lean\\bin\\k3.dll",
+    "litmoe.dll",
+    "build/bin/Release/litmoe.dll",
+    "C:\\Program Files\\litMoE\\bin\\litmoe.dll",
 ]
 
 
 def _find_library() -> str:
-    """Locate libk3. Honors LD_LIBRARY_PATH (POSIX) and PATH (Windows)
+    """Locate liblitmoe. Honors LD_LIBRARY_PATH (POSIX) and PATH (Windows)
     automatically via ctypes.CDLL; explicit paths are tried first."""
     for p in _LIB_PATHS:
         if Path(p).exists():
             return str(p)
     # Fall back to whatever ctypes finds on the system search path.
-    for name in ("libk3.so", "libk3.dylib", "k3.dll"):
+    for name in ("liblitmoe.so", "liblitmoe.dylib", "litmoe.dll"):
         try:
             return ctypes.util.find_library(name) or name
         except Exception:
             continue
     raise FileNotFoundError(
-        "Could not locate libk3.{so,dylib,dll}. Set LD_LIBRARY_PATH "
-        "(POSIX) or PATH (Windows), or copy libk3 next to your script."
+        "Could not locate liblitmoe.{so,dylib,dll}. Set LD_LIBRARY_PATH "
+        "(POSIX) or PATH (Windows), or copy liblitmoe next to your script."
     )
 
 

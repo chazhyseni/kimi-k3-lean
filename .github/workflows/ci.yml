@@ -1,6 +1,6 @@
 name: ci
 
-# CI for kimi-k3-lean. Runs on every push and PR.
+# CI for litMoE. Runs on every push and PR.
 #
 # Matrix covers:
 #   - Linux x86_64 (Ubuntu 22.04 + 24.04)
@@ -23,7 +23,7 @@ concurrency:
 
 env:
   # Make the engine logs easier to find in failures.
-  K3_LOG_LEVEL: 1
+  LITMOE_LOG_LEVEL: 1
 
 jobs:
   # -------------------------------------------------------------- build-and-test
@@ -137,20 +137,20 @@ jobs:
             ./build/bin/Release/k3.exe --help
             ./build/bin/Release/k3.exe --version
           elif [ "${{ matrix.build }}" = "cmake" ]; then
-            ./build/bin/k3 --help
-            ./build/bin/k3 --version
+            ./build/bin/litmoe --help
+            ./build/bin/litmoe --version
           else
-            ./bin/k3 --help
-            ./bin/k3 --version
+            ./bin/litmoe --help
+            ./bin/litmoe --version
           fi
 
-      - name: Verify libk3.so exports
+      - name: Verify liblitmoe.so exports
         if: matrix.os != 'windows-2022'
         run: |
           if [ "${{ matrix.build }}" = "cmake" ]; then
-            LIB=./build/lib/libk3.so
+            LIB=./build/lib/liblitmoe.so
           else
-            LIB=./bin/libk3.so
+            LIB=./bin/liblitmoe.so
           fi
           echo "Public API symbols in $LIB:"
           nm -D --defined-only "$LIB" 2>/dev/null | grep " T k3_" | sort
@@ -190,12 +190,12 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: kimi-k3-lean-${{ matrix.os }}-${{ matrix.compiler }}
+          name: litMoE-${{ matrix.os }}-${{ matrix.compiler }}
           path: |
             bin/k3
-            bin/libk3.so
+            bin/liblitmoe.so
             build/bin/k3
-            build/lib/libk3.so
+            build/lib/liblitmoe.so
             build/bin/Release/k3.exe
             build/bin/Release/k3.dll
             build/lib/Release/k3.dll

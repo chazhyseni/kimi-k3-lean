@@ -72,18 +72,18 @@ leanmoe stack up --webui --kimi-k3 --qwen3
 Everything shared is neutral (`leanmoe`, `libmoe`, `moe`, `MOE_*`).
 Everything architecture-specific keeps its name (`kimi_ops`, `qwen_ops`).
 
-| Old name (kimi-k3-lean) | New name (leanmoe) | Scope |
+| Old name (litMoE) | New name (leanmoe) | Scope |
 |---|---|---|
-| `kimi-k3-lean` (CLI) | `leanmoe` | shared |
-| `libk3.so` | `libmoe.so` | shared |
+| `litMoE` (CLI) | `leanmoe` | shared |
+| `liblitmoe.so` | `libmoe.so` | shared |
 | `bin/k3` | `bin/moe` | shared |
-| `K3_DIR`, `K3_PORT`, etc. | `MOE_DIR`, `MOE_PORT`, etc. | shared |
+| `LITMOE_DIR`, `LITMOE_PORT`, etc. | `MOE_DIR`, `MOE_PORT`, etc. | shared |
 | `k3_cache.c` | `cache.c` | shared |
 | `k3_trunk.c` | `trunk.c` | shared |
 | `k3_st.c` | `safetensors.c` | shared |
 | `k3_engine.c` | `engine.c` | shared |
 | `k3_api.c` | `api.c` | shared |
-| `libk3.h` | `moe.h` | shared |
+| `liblitmoe.h` | `moe.h` | shared |
 | `k3_ops.c` | `kimi_ops.c` | arch-specific (Kimi) |
 | `k3_bind.c` | `kimi_bind.c` | arch-specific (Kimi) |
 | `k3.h` | `kimi.h` | arch-specific (Kimi) |
@@ -92,8 +92,8 @@ Everything architecture-specific keeps its name (`kimi_ops`, `qwen_ops`).
 | (new) | `qwen_bind.c` | arch-specific (Qwen3) |
 | (new) | `qwen.h` | arch-specific (Qwen3) |
 | (new) | `qwen_cfg.h` | arch-specific (Qwen3) |
-| `download-model.sh` | `fetch-model.sh` | shared |
-| `k3-doctor.sh` | `leanmoe-doctor.sh` | shared |
+| `fetch-model.sh` | `fetch-model.sh` | shared |
+| `litmoe-doctor.sh` | `leanmoe-doctor.sh` | shared |
 
 ## Directory Structure
 
@@ -115,7 +115,7 @@ leanmoe/
 ├── .gitignore
 │
 ├── include/
-│   ├── moe.h                   # public C API (was libk3.h)
+│   ├── moe.h                   # public C API (was liblitmoe.h)
 │   ├── arch.h                  # ArchOps vtable
 │   └── arch/
 │       ├── kimi.h              # Kimi K3 config + structs
@@ -294,7 +294,7 @@ Hardcoded in the launcher for now (can become a JSON file later):
 
 ```bash
 # model_name → huggingface_repo
-KIMI_K3_REPO="moonshotai/Kimi-K3"
+KIMI_LITMOE_REPO="moonshotai/Kimi-K3"
 QWEN3_MOE_REPO="Qwen/Qwen3-235B-A22B"   # placeholder — verify actual repo
 
 # model_name → display name
@@ -308,7 +308,7 @@ with the right HF repo ID, downloads to `~/.leanmoe/checkpoints/<name>/`.
 ## Env Var Migration
 
 All `K3_*` env vars become `MOE_*`:
-`K3_DIR` → `MOE_DIR`, `K3_PORT` → `MOE_PORT`, etc.
+`LITMOE_DIR` → `MOE_DIR`, `LITMOE_PORT` → `MOE_PORT`, etc.
 
 The launcher reads both for backward compatibility:
 ```bash
@@ -319,7 +319,7 @@ The launcher reads both for backward compatibility:
 
 ### Phase 1: Rename (1-2 days)
 Rename repo, CLI, env vars, lib, binary, scripts. Update all docs.
-The `kimi-k3-lean` GitHub repo redirects to `leanmoe`.
+The `litMoE` GitHub repo redirects to `leanmoe`.
 
 ### Phase 2: Restructure source (1 day)
 Move shared files to `src/shared/`, arch-specific to `src/arch/`.

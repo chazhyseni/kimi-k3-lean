@@ -1,10 +1,10 @@
-# Dockerfile — runtime image for kimi-k3-lean.
+# Dockerfile — runtime image for litMoE.
 #
 # Multi-arch: linux/amd64 + linux/arm64.
 # Base: Debian 12 (bookworm) slim. Glibc 2.36, gcc-compatible.
 #
 # What's in it:
-#   - The compiled kimi-k3-lean binaries (libk3.so, k3)
+#   - The compiled litMoE binaries (liblitmoe.so, litmoe)
 #   - Python 3.11 (for the OpenAI server)
 #   - The full source tree (for the convert tool)
 #
@@ -54,18 +54,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the built binaries. The Makefile produces bin/libk3.so; CMake
-# produces build/lib/libk3.so. Prefer the Makefile output (it's what
+# Copy the built binaries. The Makefile produces bin/liblitmoe.so; CMake
+# produces build/lib/liblitmoe.so. Prefer the Makefile output (it's what
 # bootstrap.sh and the launcher use).
-COPY --from=build /src/bin/k3          /usr/local/bin/k3
-COPY --from=build /src/bin/libk3.so    /usr/local/lib/libk3.so
+COPY --from=build /src/bin/litmoe          /usr/local/bin/litmoe
+COPY --from=build /src/bin/liblitmoe.so    /usr/local/lib/liblitmoe.so
 
 # Copy the headers (for downstream embedding).
-COPY --from=build /src/include/libk3/libk3.h /usr/local/include/libk3/libk3.h
+COPY --from=build /src/include/liblitmoe/liblitmoe.h /usr/local/include/liblitmoe/liblitmoe.h
 
 # Copy the source tree (for the Python server + convert tool).
-WORKDIR /opt/kimi-k3-lean
-COPY --from=build /src/ /opt/kimi-k3-lean/
+WORKDIR /opt/litMoE
+COPY --from=build /src/ /opt/litMoE/
 
 # Update the dynamic linker cache.
 RUN ldconfig
@@ -73,13 +73,13 @@ RUN ldconfig
 # Default: start the OpenAI server on port 8080. Mount a checkpoint
 # at /data to get real inference; without it the server still starts
 # and /v1/models works (chat returns engine_error).
-ENV K3_HOST=0.0.0.0 K3_PORT=8080
+ENV LITMOE_HOST=0.0.0.0 LITMOE_PORT=8080
 EXPOSE 8080
 ENTRYPOINT ["python3", "-u", "serve/__main__.py", "/data", "--host", "0.0.0.0", "--port", "8080"]
 
 # --------------------------------------------------------------- labels
-LABEL org.opencontainers.image.title="kimi-k3-lean" \
+LABEL org.opencontainers.image.title="litMoE" \
       org.opencontainers.image.description="Lean OpenAI-compatible server for Kimi K3 — disk-resident, CPU-only" \
-      org.opencontainers.image.source="https://github.com/chazhyseni/kimi-k3-lean" \
+      org.opencontainers.image.source="https://github.com/chazhyseni/litMoE" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="chazhyseni"

@@ -14,5 +14,5 @@ TRUNK="${2:?}"
 FILE="${3:?}"
 
 wc -c "$FILE"
-./bin/k3 "$MODEL" --trunk "$TRUNK" --preset server \
+./bin/litmoe "$MODEL" --trunk "$TRUNK" --preset server \
     --tok "$MODEL" --prompt-file "$FILE" --gen 16 --incremental

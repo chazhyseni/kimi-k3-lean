@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# kimi-k3-lean laptop installer.
+# litMoE laptop installer.
 #
 # Usage:
 #   curl -fsSL https://<server>/client/install.sh | bash
@@ -18,7 +18,7 @@
 #   * Agent CLIs (Claude Code, Pi, OpenCode, aider) need different env
 #     vars per tool; remote-env.sh sets them all at once.
 #
-# This is the kimi-k3-lean analogue of /mnt/scratch/agents/install-remote-client.sh
+# This is the litMoE analogue of /mnt/scratch/agents/install-remote-client.sh
 # in the llm-server deployment.
 
 set -euo pipefail

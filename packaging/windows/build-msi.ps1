@@ -1,10 +1,10 @@
-# build-msi.ps1 — build a Windows MSI for kimi-k3-lean using WiX 3.x.
+# build-msi.ps1 — build a Windows MSI for litMoE using WiX 3.x.
 #
 # Usage:
-#   .\build-msi.ps1 -Version "0.6.8" -SourceDir "C:\dist\kimi-k3-lean-0.6.8"
+#   .\build-msi.ps1 -Version "0.6.8" -SourceDir "C:\dist\litMoE-0.6.8"
 #
 # Output:
-#   .\kimi-k3-lean-0.6.8.msi
+#   .\litMoE-0.6.8.msi
 #
 # Prerequisites:
 #   - PowerShell 5.1+ (Windows 10/11/Server 2016+)
@@ -16,7 +16,7 @@
 #   1. Generates a WiX .wxs file describing the install layout.
 #   2. Compiles it with `candle.exe`.
 #   3. Links it into an MSI with `light.exe`.
-#   4. The MSI installs to C:\Program Files\kimi-k3-lean\ and adds
+#   4. The MSI installs to C:\Program Files\litMoE\ and adds
 #      bin\ to the system PATH.
 
 [CmdletBinding()]
@@ -37,8 +37,8 @@ if (-not (Test-Path $SourceDir)) {
 if (-not (Test-Path "$SourceDir\bin\k3.exe")) {
     throw "SourceDir is missing bin\k3.exe — is this the Windows release zip?"
 }
-if (-not (Test-Path "$SourceDir\lib\libk3.dll")) {
-    throw "SourceDir is missing lib\libk3.dll — is this the Windows release zip?"
+if (-not (Test-Path "$SourceDir\lib\liblitmoe.dll")) {
+    throw "SourceDir is missing lib\liblitmoe.dll — is this the Windows release zip?"
 }
 
 # Find WiX. Try the .NET tool first, fall back to native install.
@@ -62,19 +62,19 @@ if (-not $wixBin -or -not (Test-Path "$wixBin\candle.exe")) {
     }
 }
 
-Write-Host "==> Building kimi-k3-lean $Version MSI"
+Write-Host "==> Building litMoE $Version MSI"
 Write-Host "    Source:  $SourceDir"
 Write-Host "    WiX:     $wixBin"
 
 # --------------------------------------------------------------- generate .wxs
-$wxsFile = Join-Path $PSScriptRoot "kimi-k3-lean-$Version.wxs"
+$wxsFile = Join-Path $PSScriptRoot "litMoE-$Version.wxs"
 $productCode = (New-Guid).Guid.ToString().ToUpper()
 $upgradeCode = "{B6E5F8A1-3D2C-4F7E-9A1B-5C8D2E4F6A9B}"
 
 @"
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Name="kimi-k3-lean"
+  <Product Name="litMoE"
            Version="$Version"
            Manufacturer="chazhyseni"
            Id="{$productCode}"
@@ -82,21 +82,21 @@ $upgradeCode = "{B6E5F8A1-3D2C-4F7E-9A1B-5C8D2E4F6A9B}"
            Language="1033">
 
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of kimi-k3-lean is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of litMoE is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- Where to install. -->
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFilesFolder">
-        <Directory Id="INSTALLDIR" Name="kimi-k3-lean">
+        <Directory Id="INSTALLDIR" Name="litMoE">
           <Directory Id="BinDir" Name="bin" />
           <Directory Id="LibDir" Name="lib" />
           <Directory Id="IncludeDir" Name="include">
-            <Directory Id="Libk3Dir" Name="libk3" />
+            <Directory Id="Libk3Dir" Name="liblitmoe" />
           </Directory>
           <Directory Id="ShareDir" Name="share">
             <Directory Id="DocDir" Name="doc">
-              <Directory Id="KimiDir" Name="kimi-k3-lean" />
+              <Directory Id="KimiDir" Name="litMoE" />
             </Directory>
           </Directory>
         </Directory>
@@ -104,7 +104,7 @@ $upgradeCode = "{B6E5F8A1-3D2C-4F7E-9A1B-5C8D2E4F6A9B}"
       <Directory Id="ProgramMenuFolder" />
     </Directory>
 
-    <Feature Id="ProductFeature" Title="kimi-k3-lean" Level="1">
+    <Feature Id="ProductFeature" Title="litMoE" Level="1">
       <ComponentGroupRef Id="BinComponents" />
       <ComponentGroupRef Id="LibComponents" />
       <ComponentGroupRef Id="IncludeComponents" />
@@ -117,35 +117,35 @@ $upgradeCode = "{B6E5F8A1-3D2C-4F7E-9A1B-5C8D2E4F6A9B}"
       <Component Id="Bin_k3" Guid="(NEWGUID1)">
         <File Id="k3_exe" Source="SourceDir\bin\k3.exe" KeyPath="yes" />
       </Component>
-      <Component Id="Bin_libk3_dll" Guid="(NEWGUID2)">
-        <File Id="libk3_dll" Source="SourceDir\lib\libk3.dll" />
+      <Component Id="Bin_liblitmoe_dll" Guid="(NEWGUID2)">
+        <File Id="liblitmoe_dll" Source="SourceDir\lib\liblitmoe.dll" />
       </Component>
     </ComponentGroup>
 
     <!-- lib/ -->
     <ComponentGroup Id="LibComponents" Directory="LibDir">
-      <Component Id="Lib_libk3_static" Guid="(NEWGUID3)">
-        <File Id="libk3_static" Source="SourceDir\lib\libk3_static.lib" />
+      <Component Id="Lib_liblitmoe_static" Guid="(NEWGUID3)">
+        <File Id="liblitmoe_static" Source="SourceDir\lib\liblitmoe_static.lib" />
       </Component>
     </ComponentGroup>
 
-    <!-- include/libk3/ -->
+    <!-- include/liblitmoe/ -->
     <ComponentGroup Id="IncludeComponents" Directory="Libk3Dir">
-      <Component Id="Include_libk3_h" Guid="(NEWGUID4)">
-        <File Id="libk3_h" Source="SourceDir\include\libk3\libk3.h" KeyPath="yes" />
+      <Component Id="Include_liblitmoe_h" Guid="(NEWGUID4)">
+        <File Id="liblitmoe_h" Source="SourceDir\include\liblitmoe\liblitmoe.h" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 
-    <!-- share/doc/kimi-k3-lean/ -->
+    <!-- share/doc/litMoE/ -->
     <ComponentGroup Id="DocComponents" Directory="KimiDir">
       <Component Id="Doc_README" Guid="(NEWGUID5)">
-        <File Id="doc_README"   Source="SourceDir\share\doc\kimi-k3-lean\README.md" />
+        <File Id="doc_README"   Source="SourceDir\share\doc\litMoE\README.md" />
       </Component>
       <Component Id="Doc_LICENSE" Guid="(NEWGUID6)">
-        <File Id="doc_LICENSE" Source="SourceDir\share\doc\kimi-k3-lean\LICENSE" />
+        <File Id="doc_LICENSE" Source="SourceDir\share\doc\litMoE\LICENSE" />
       </Component>
       <Component Id="Doc_INSTALL" Guid="(NEWGUID7)">
-        <File Id="doc_INSTALL" Source="SourceDir\share\doc\kimi-k3-lean\INSTALL.md" />
+        <File Id="doc_INSTALL" Source="SourceDir\share\doc\litMoE\INSTALL.md" />
       </Component>
     </ComponentGroup>
 
@@ -189,8 +189,8 @@ Write-Host "==> candle.exe $wxsFile"
 & "$wixBin\candle.exe" -out "$PSScriptRoot\" $wxsFile
 if ($LASTEXITCODE -ne 0) { throw "candle.exe failed" }
 
-$wixObjFile = Join-Path $PSScriptRoot "kimi-k3-lean-$Version.wixobj"
-$msiFile    = Join-Path $PSScriptRoot "kimi-k3-lean-$Version.msi"
+$wixObjFile = Join-Path $PSScriptRoot "litMoE-$Version.wixobj"
+$msiFile    = Join-Path $PSScriptRoot "litMoE-$Version.msi"
 
 Write-Host "==> light.exe (linking MSI)"
 & "$wixBin\light.exe" `
@@ -205,7 +205,7 @@ Write-Host "==> Done."
 Write-Host "    $msiFile"
 Write-Host ""
 Write-Host "To install on a target Windows host:"
-Write-Host "    msiexec /i kimi-k3-lean-$Version.msi /qb"
+Write-Host "    msiexec /i litMoE-$Version.msi /qb"
 Write-Host ""
 Write-Host "To uninstall:"
-Write-Host "    msiexec /x kimi-k3-lean-$Version.msi /qb"
+Write-Host "    msiexec /x litMoE-$Version.msi /qb"

@@ -1,4 +1,4 @@
-# CMakeLists.txt — cross-platform build for kimi-k3-lean
+# CMakeLists.txt — cross-platform build for litMoE
 #
 # Mirrors the Makefile. Use CMake if you prefer it, or if you're on Windows,
 # macOS without make, or building with Visual Studio / Ninja / Xcode.
@@ -13,7 +13,7 @@
 #   cmake --install build
 
 cmake_minimum_required(VERSION 3.16)
-project(kimi-k3-lean
+project(litMoE
     VERSION 0.6.8
     DESCRIPTION "Lean OpenAI-compatible server for Kimi K3 — disk-resident, CPU-only"
     LANGUAGES C)
@@ -21,11 +21,11 @@ project(kimi-k3-lean
 # ---------------------------------------------------------------------------- options
 
 option(K3_BUILD_CLI   "Build the k3 CLI binary"            ON)
-option(K3_BUILD_LIB   "Build libk3 (static + shared)"       ON)
+option(K3_BUILD_LIB   "Build liblitmoe (static + shared)"       ON)
 option(K3_BUILD_TESTS "Build unit tests"                    ON)
-option(K3_INSTALL_HEADERS "Install headers (libk3.h)"        ON)
+option(K3_INSTALL_HEADERS "Install headers (liblitmoe.h)"        ON)
 
-set(K3_VERSION "0.6.8" CACHE STRING "Engine version")
+set(LITMOE_VERSION "0.6.8" CACHE STRING "Engine version")
 
 # ---------------------------------------------------------------------------- compile flags
 
@@ -115,20 +115,20 @@ target_link_libraries(k3_engine PUBLIC ${PLATFORM_LIBS} Threads::Threads)
 if(K3_BUILD_LIB)
     add_library(k3 SHARED ${K3_LIB_SRC})
     target_include_directories(k3 PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/libk3
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/liblitmoe
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     target_link_libraries(k3 PUBLIC k3_engine)
     set_target_properties(k3 PROPERTIES
-        OUTPUT_NAME k3
-        VERSION ${K3_VERSION}
-        SOVERSION ${K3_VERSION}
+        OUTPUT_NAME litmoe
+        VERSION ${LITMOE_VERSION}
+        SOVERSION ${LITMOE_VERSION}
     )
 
     # Static variant for embedding.
     add_library(k3_static STATIC ${K3_LIB_SRC})
     target_include_directories(k3_static PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/libk3
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/liblitmoe
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     target_link_libraries(k3_static PUBLIC k3_engine)
@@ -141,7 +141,7 @@ if(K3_BUILD_CLI)
     add_executable(k3 ${K3_CLI_SRC})
     target_link_libraries(k3 PRIVATE k3_engine k3_static)
     target_include_directories(k3 PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/libk3
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/liblitmoe
     )
 endif()
 
@@ -173,7 +173,7 @@ endif()
 include(GNUInstallDirs)
 
 if(K3_INSTALL_HEADERS)
-    install(FILES include/libk3/libk3.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libk3)
+    install(FILES include/liblitmoe/litmoe.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/liblitmoe)
 endif()
 
 if(K3_BUILD_LIB)
@@ -191,7 +191,7 @@ endif()
 # ---------------------------------------------------------------------------- summary
 
 message(STATUS "")
-message(STATUS "kimi-k3-lean ${K3_VERSION} configuration:")
+message(STATUS "litMoE ${LITMOE_VERSION} configuration:")
 message(STATUS "  Build type:        ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build CLI:         ${K3_BUILD_CLI}")
 message(STATUS "  Build library:     ${K3_BUILD_LIB}")

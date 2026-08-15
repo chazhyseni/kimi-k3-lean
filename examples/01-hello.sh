@@ -9,7 +9,7 @@ set -euo pipefail
 MODEL="${1:?usage: 01-hello.sh <model_dir> <trunk_dir>}"
 TRUNK="${2:?}"
 
-./bin/k3 "$MODEL" \
+./bin/litmoe "$MODEL" \
     --trunk "$TRUNK" --preset server \
     --tok "$MODEL" \
     --prompt "Hello! My name is" \

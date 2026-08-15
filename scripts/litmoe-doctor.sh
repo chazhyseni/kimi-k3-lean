@@ -129,7 +129,7 @@ if [ -n "$MODEL_DIR" ]; then
     # `set -euo pipefail` instead of reporting zero shards.
     N=$(find "$MODEL_DIR" -maxdepth 1 -name '*.safetensors' | wc -l)
     if [ "$N" -eq 0 ]; then
-        warn "no .safetensors shards in $MODEL_DIR, run scripts/download-model.sh"
+        warn "no .safetensors shards in $MODEL_DIR, run scripts/fetch-model.sh"
     else
         ok "shards present: $N"
         [ "$N" -eq 96 ] || warn "expected 96 shards for the full checkpoint"
@@ -161,7 +161,7 @@ if [ "$FAILED" -eq 0 ]; then
         printf '\n  next:\n'
         printf '    %smake -j%s\n' "$DIM" "$RST"
         printf '    %s./scripts/pack-trunk.sh %s ~/k3trunk%s\n' "$DIM" "$M" "$RST"
-        printf '    %s./bin/k3 %s --trunk ~/k3trunk --preset %s \\%s\n' "$DIM" "$M" "$PRESET" "$RST"
+        printf '    %s./bin/litmoe %s --trunk ~/k3trunk --preset %s \\%s\n' "$DIM" "$M" "$PRESET" "$RST"
         printf '    %s         --tok %s --prompt "Hello" --gen 8 --incremental%s\n' "$DIM" "$M" "$RST"
     else
         # No preset fits, but the weightless path always does, and it is the whole of

@@ -31,7 +31,7 @@ systemd-run --scope --user -q true 2>/dev/null || {
     echo "systemd-run --user does not work here (no user session bus?)."
     exit 1
 }
-[ -x ./bin/k3 ] || { echo "./bin/k3 not built, run 'make -j' first"; exit 1; }
+[ -x ./bin/litmoe ] || { echo "./bin/litmoe not built, run 'make -j' first"; exit 1; }
 [ -d "$MODEL" ] || { echo "no such model dir: $MODEL"; exit 1; }
 [ -d "$TRUNK" ] || { echo "no such trunk dir: $TRUNK, run scripts/pack-trunk.sh"; exit 1; }
 command -v python3 >/dev/null || { echo "python3 required for the summary"; exit 1; }
@@ -47,7 +47,7 @@ printf 'total_gb\ttrunk_gb\tcache_gb\trep\ts_per_tok\tpeak_rss_gb\tgb_read\tids\
     echo "cores       : $(nproc 2>/dev/null || echo '?')"
     echo "memtotal    : $(awk '/MemTotal/{printf "%.1f GB", $2/1048576}' /proc/meminfo 2>/dev/null)"
     echo "trunk_fs    : $(df -PT "$TRUNK" 2>/dev/null | awk 'NR==2{print $2, $1}')"
-    echo "k3          : $(./bin/k3 --version 2>&1 | head -1)"
+    echo "k3          : $(./bin/litmoe --version 2>&1 | head -1)"
     echo "total_gb    : $TOTAL"
     echo "reps/split  : $REPS"
 } > "$OUT/machine.txt"
@@ -69,7 +69,7 @@ for f in $FRACS; do
         echo "== ${TOTAL} GB total: trunk ${TR} / cache ${CA}, rep ${r}/${REPS} =="
         systemd-run --scope --user -q \
             -p MemoryMax=${TOTAL}G -p MemorySwapMax=0 \
-            ./bin/k3 "$MODEL" --ids "$IDS" --gen "$GEN" \
+            ./bin/litmoe "$MODEL" --ids "$IDS" --gen "$GEN" \
             --trunk "$TRUNK" --trunk-gb "$TR" --cache-gb "$CA" --incremental \
             --out "$OUT/$tag.json" > "$OUT/$tag.log" 2>&1
         rc=$?

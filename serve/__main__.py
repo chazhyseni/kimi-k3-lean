@@ -1,6 +1,6 @@
 """__main__.py -- `python3 serve/__main__.py <model_dir>`.
 
-OpenAI-compatible HTTP server over libk3.so. The model argument is a
+OpenAI-compatible HTTP server over liblitmoe.so. The model argument is a
 path to the article's tiny_k3 fixture (or a real K3 model directory).
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ class _NullEngine:
     # server catches and converts to a 500 engine_error JSON envelope.
     def tokenize(self, text: str):
         raise EngineError("engine not loaded (no model on disk; run "
-                          "`kimi-k3-lean fetch` to download K3 weights)")
+                          "`litMoE fetch` to download K3 weights)")
 
     def generate(self, prompt_ids, *, max_tokens: int = 0):
         raise EngineError("engine not loaded (no model on disk)")
@@ -99,7 +99,7 @@ examples:
       --host 0.0.0.0
 
   curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \\
-    -d '{"model":"kimi-k3-lean","messages":[{"role":"user","content":"hi"}]}'
+    -d '{"model":"litMoE","messages":[{"role":"user","content":"hi"}]}'
 """)
     ap.add_argument("model", help="path to the model directory (or tiny_k3.bin fixture)")
     ap.add_argument("--host", default="127.0.0.1",
@@ -108,10 +108,10 @@ examples:
     ap.add_argument("--port", type=bounded_int(0, 65535), default=8080)
     ap.add_argument("--model-id", default=None,
                     help="name reported by /v1/models (default: directory name)")
-    ap.add_argument("--api-key", default=os.environ.get("K3_API_KEY"),
-                    help="require this bearer token (default $K3_API_KEY)")
+    ap.add_argument("--api-key", default=os.environ.get("LITMOE_API_KEY"),
+                    help="require this bearer token (default $LITMOE_API_KEY)")
 
-    # Engine options that map to libk3's k3_open_args.
+    # Engine options that map to liblitmoe's k3_open_args.
     g = ap.add_argument_group("engine")
     g.add_argument("--preset", default=None,
                    choices=["laptop", "desktop", "workstation", "server",
@@ -162,10 +162,10 @@ examples:
             print(f"engine open failed: {e}", file=sys.stderr)
             print("the HTTP scaffold will still come up; /v1/models works,", file=sys.stderr)
             print("but /v1/chat/completions will return engine_error until", file=sys.stderr)
-            print("weights are on disk. Run: kimi-k3-lean fetch", file=sys.stderr)
+            print("weights are on disk. Run: litMoE fetch", file=sys.stderr)
     else:
         print(f"no model at {model} — starting scaffold (engine_error on chat)", file=sys.stderr)
-        print("download weights with: kimi-k3-lean fetch", file=sys.stderr)
+        print("download weights with: litMoE fetch", file=sys.stderr)
 
     # Wrap engine (or its absence) in a uniform interface for the http
     # layer. When the real engine loaded, use it directly. When it didn't,
@@ -175,7 +175,7 @@ examples:
     if engine is None:
         engine = _NullEngine(model_id=model_id or "kimi-k3")
 
-    print(f"kimi-k3-lean OpenAI server")
+    print(f"litMoE OpenAI server")
     print(f"  model    {model_id} — {engine.model_id}, "
           f"{engine.n_layers} layers, vocab {engine.vocab_size}, "
           f"ctx {engine.ctx_size}")

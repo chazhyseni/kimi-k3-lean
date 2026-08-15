@@ -204,7 +204,7 @@ not as the engine's speed.
 
 ```bash
 make -j
-./scripts/k3-doctor.sh ~/k3model          # what this machine should manage
+./scripts/litmoe-doctor.sh ~/k3model          # what this machine should manage
 ./benchmarks/memory-ladder.sh ~/k3model ~/k3trunk out/   # the full sweep
 ```
 

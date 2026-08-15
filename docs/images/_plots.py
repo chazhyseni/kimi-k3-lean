@@ -207,7 +207,7 @@ def bytes_census():
 
 
 def preset_ladder():
-    """DUMBBELL. k3_run.c K3_PRESETS + docs/PERFORMANCE.md measured peak RSS."""
+    """DUMBBELL. k3_run.c LITMOE_PRESETS + docs/PERFORMANCE.md measured peak RSS."""
     names = ["laptop", "desktop", "workstation", "server", "max"]
     budget = [4.0, 26.0, 90.0, 123.0, 219.0]      # trunk + cache requested
     rss = [8.2, 31.9, 95.5, 127.9, 223.8]         # measured peak

@@ -1,4 +1,4 @@
-# kimi-k3-lean — install & verify
+# litMoE — install & verify
 
 ## Install
 
@@ -49,8 +49,8 @@ cmake --install build --prefix C:\Users\you\k3lean
 ### Docker (any platform)
 
 ```bash
-docker build -f Dockerfile -t kimi-k3-lean .
-docker run --rm -p 8080:8080 -v $PWD/checkpoints/k3:/data:ro kimi-k3-lean
+docker build -f Dockerfile -t litMoE .
+docker run --rm -p 8080:8080 -v $PWD/checkpoints/k3:/data:ro litMoE
 ```
 
 ### Without admin (user-local install on any Unix)
@@ -88,7 +88,7 @@ The build has two outputs:
 | Output | Size | Purpose |
 |---|---:|---|
 | `bin/k3` | 167 KB | CLI for direct prompt/response |
-| `bin/libk3.so` | 162 KB | shared library, loaded by the Python server |
+| `bin/liblitmoe.so` | 162 KB | shared library, loaded by the Python server |
 
 Both are reproducible from `src/` with the C engine unchanged.
 
@@ -195,15 +195,15 @@ up with one command:
 
 ```bash
 # Bare stack (Caddy + gateway + router, no chat UI)
-kimi-k3-lean stack up
+litMoE stack up
 
 # Full stack including Open WebUI for browser-based chats
-kimi-k3-lean stack up --webui
+litMoE stack up --webui
 
 # Tear down / inspect
-kimi-k3-lean stack down
-kimi-k3-lean stack status
-kimi-k3-lean stack logs gateway
+litMoE stack down
+litMoE stack status
+litMoE stack logs gateway
 ```
 
 This wraps `docker compose -f deploy/compose.yml`, creating
@@ -236,7 +236,7 @@ From any client on the LAN:
 ```bash
 curl -fsSL -k https://<server>/client/install.sh | bash
 source ~/llm-client/remote-env.sh
-claude         # Claude Code, OpenCode, aider, Qwen — all use kimi-k3-lean
+claude         # Claude Code, OpenCode, aider, Qwen — all use litMoE
 ```
 
 Pattern matches the llm-server project but trimmed
@@ -247,7 +247,7 @@ for CPU-only / single-binary / cross-platform.
 Same as the Quick Start in the README — read
 it once and apply the same three steps to the deploy LAN URL.
 `$INTERNAL_API_KEY` is the key in `deploy/.env` (called
-`INTERNAL_API_KEY`), not the per-host `K3_API_KEY`. The `model.base_url`
+`INTERNAL_API_KEY`), not the per-host `LITMOE_API_KEY`. The `model.base_url`
 becomes `http://<server>/llm/v1` (note the `/llm/` prefix the Caddy
 router adds).
 

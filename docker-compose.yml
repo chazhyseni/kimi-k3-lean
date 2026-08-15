@@ -1,4 +1,4 @@
-# docker-compose.yml — bring up kimi-k3-lean with sensible defaults.
+# docker-compose.yml — bring up litMoE with sensible defaults.
 #
 # Usage:
 #   docker compose up                    # foreground
@@ -8,21 +8,21 @@
 #
 # Prerequisites:
 #   - The model directory at /path/to/kimi-k3/checkpoint, OR
-#   - Set K3_MODEL_DIR in .env (copy .env.example)
+#   - Set LITMOE_MODEL_DIR in .env (copy .env.example)
 #
 # Cgroups:
 #   - Default cpuset: 0-7 (eight cores). Override with CPUSET in .env.
 #   - Default memory: 32 GB. Override with MEMORY in .env.
 
-name: kimi-k3-lean
+name: litMoE
 
 services:
-  kimi-k3-lean:
+  litMoE:
     build:
       context: .
       dockerfile: Dockerfile
-    image: kimi-k3-lean:latest
-    container_name: kimi-k3-lean
+    image: litMoE:latest
+    container_name: litMoE
     restart: unless-stopped
 
     deploy:
@@ -36,16 +36,16 @@ services:
 
     # Bind the model directory as a read-only mount.
     volumes:
-      - ${K3_MODEL_DIR:-/path/to/checkpoint}:/data:ro
+      - ${LITMOE_MODEL_DIR:-/path/to/checkpoint}:/data:ro
 
     # Network. The host can reach the server at 127.0.0.1:8080.
     ports:
-      - "${K3_PORT:-8080}:8080"
+      - "${LITMOE_PORT:-8080}:8080"
 
-    # Environment. K3_PRESET picks the engine preset; K3_API_KEY
+    # Environment. LITMOE_PRESET picks the engine preset; LITMOE_API_KEY
     # sets the bearer token (required for non-loopback binds).
     environment:
-      K3_API_KEY: ${K3_API_KEY:-}
+      LITMOE_API_KEY: ${LITMOE_API_KEY:-}
 
     # Healthcheck: hit /health; if 200, server is ready.
     healthcheck:

@@ -58,7 +58,7 @@
 #include "k3_tok.h"   /* text in/out; the --ids path never touches it */
 #include "k3_cfg.h"   /* read the checkpoint's own config rather than assuming it */
 
-#include "libk3/k3_internal.h"  /* Weights, K3Preset, K3StateHdr_inner */
+#include "litmoe_internal.h"  /* Weights, K3Preset, K3StateHdr_inner */
 
 static double now_s(void)
 {
@@ -144,7 +144,7 @@ int argmax_(const float *v, int n)
 #define K3_STATE_MAGIC "K3ST"
 #define K3_STATE_VER   1
 
-/* K3StateHdr_inner is in include/libk3/k3_internal.h */
+/* K3StateHdr_inner is in include/liblitmoe/litmoe_internal.h */
 
 void k3_state_fp(const K3Cfg *c, int32_t *fp)
 {
@@ -297,7 +297,7 @@ static int spec_draft(const int *seq, int T, int cap, int *out)
     return 0;
 }
 
-/* K3_VERSION is in libk3/libk3.h */
+/* K3_VERSION is in liblitmoe/litmoe.h */
 
 static void usage(FILE *f)
 {
@@ -352,7 +352,7 @@ static void usage(FILE *f)
 "\n"
 "Memory is a dial, not a floor: the same model runs in 8 GB and in 224 GB and produces\n"
 "identical output. Give memory to the trunk before the expert cache, see\n"
-"docs/PERFORMANCE.md for why, and scripts/k3-doctor.sh to size this machine.\n");
+"docs/PERFORMANCE.md for why, and scripts/litmoe-doctor.sh to size this machine.\n");
 }
 
 /* ------------------------------------------------------------------- presets ----
@@ -368,7 +368,7 @@ static void usage(FILE *f)
  * Measured consequence: at a fixed 128 GB budget, trunk-first runs 1.69x faster than
  * cache-first. So every preset fills the trunk before it feeds the cache.
  * docs/PERFORMANCE.md carries the data and the noise floor that bounds it. */
-/* K3Preset is defined in include/libk3/k3_internal.h */
+/* K3Preset is defined in include/liblitmoe/litmoe_internal.h */
 
 /* The trunk/cache figures are BUDGETS passed to the two allocators. The description
  * quotes measured peak RSS for the whole process, which is the number that decides
@@ -400,7 +400,7 @@ static void k3_preset_list(FILE *f)
     fprintf(f, "  %-12s %6s / %-6s  %s\n", "auto", "fit", "fit",
             "sizes both from this machine's free RAM, trunk-first. Recommended.");
     fprintf(f, "\nAll presets stream the trunk, so they need --trunk <packed_dir>.\n"
-               "Run scripts/k3-doctor.sh to see which one this machine fits.\n");
+               "Run scripts/litmoe-doctor.sh to see which one this machine fits.\n");
 }
 
 /* PEAK resident set, in bytes. ru_maxrss is kilobytes on Linux and BYTES on Darwin, so
@@ -436,7 +436,7 @@ static double mem_available_bytes(void)
     return kb * 1024.0;
 }
 
-/* Weights is in include/libk3/k3_internal.h */
+/* Weights is in include/liblitmoe/litmoe_internal.h */
 
 /* One full forward over T tokens, writing logits for the LAST position only. Every
  * step rebuilds state from scratch, matching the path the oracle validates.

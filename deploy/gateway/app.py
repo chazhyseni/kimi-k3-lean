@@ -1,4 +1,4 @@
-"""gateway — auth + size limits + reverse proxy for the kimi-k3-lean router.
+"""gateway — auth + size limits + reverse proxy for the litMoE router.
 
 WHAT THIS IS
   The public-facing entry point. Clients (browser, CLI agents, scripts)
@@ -9,7 +9,7 @@ WHAT THIS IS
   3. Proxies to the router (`http://router:8080/v1/...`) with the
      router's internal key.
 
-This is the kimi-k3-lean analogue of /mnt/scratch/private-llm/gateway/app.py
+This is the litMoE analogue of /mnt/scratch/private-llm/gateway/app.py
 in your llm-server deployment. It uses the same hmac.compare_digest
 pattern for constant-time auth, the same 10 MB cap, and the same
 httpx streaming pattern that preserves SSE chunks.
@@ -42,7 +42,7 @@ INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 _ALLOWED_ORIGINS_RAW = os.environ.get("ALLOWED_ORIGINS", "")
 MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", "10485760"))
 
-app = FastAPI(title="kimi-k3-lean gateway", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="litMoE gateway", docs_url=None, redoc_url=None, openapi_url=None)
 
 if _ALLOWED_ORIGINS_RAW:
     ALLOWED_ORIGINS = [

@@ -3,9 +3,9 @@
 # Larger image: includes PyTorch + transformers + safetensors.
 # Used once per model; runtime image does not need this.
 #
-# Build:    docker build -f Dockerfile.convert -t kimi-k3-lean:convert .
+# Build:    docker build -f Dockerfile.convert -t litMoE:convert .
 # Run:      docker run --rm -v $(pwd)/out:/out -v $(pwd)/in:/in \
-#               kimi-k3-lean:convert /in/shard-00001-of-00096.safetensors /out
+#               litMoE:convert /in/shard-00001-of-00096.safetensors /out
 
 FROM --platform=$BUILDPLATFORM python:3.11-slim-bookworm AS convert
 
@@ -45,14 +45,14 @@ COPY tests/ /src/tests/
 COPY Makefile CMakeLists.txt /src/
 
 # Build the engine (for verification of the convert tool's output).
-RUN LDFLAGS="-lm -pthread" make -j"$(nproc)" libk3
+RUN LDFLAGS="-lm -pthread" make -j"$(nproc)" liblitmoe
 
 # Default: print help. Override with the convert command.
 WORKDIR /work
 ENTRYPOINT ["python3", "/src/tools/convert.py"]
 CMD ["--help"]
 
-LABEL org.opencontainers.image.title="kimi-k3-lean-convert" \
+LABEL org.opencontainers.image.title="litMoE-convert" \
       org.opencontainers.image.description="Convert Kimi K3 checkpoints to native format" \
-      org.opencontainers.image.source="https://github.com/chazhyseni/kimi-k3-lean" \
+      org.opencontainers.image.source="https://github.com/chazhyseni/litMoE" \
       org.opencontainers.image.licenses="Apache-2.0"

@@ -1,4 +1,4 @@
-/* libk3.h -- public C API for the article's Kimi K3 engine.
+/* liblitmoe.h -- public C API for the article's Kimi K3 engine.
  *
  * WHAT THIS IS
  *   A small, stable surface for opening the model, running forward steps,

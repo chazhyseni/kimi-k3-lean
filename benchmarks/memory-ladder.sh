@@ -32,7 +32,7 @@ systemd-run --scope --user -q true 2>/dev/null || {
     echo "Try: loginctl enable-linger \$USER, or run under a full login session."
     exit 1
 }
-[ -x ./bin/k3 ] || { echo "./bin/k3 not built, run 'make -j' first"; exit 1; }
+[ -x ./bin/litmoe ] || { echo "./bin/litmoe not built, run 'make -j' first"; exit 1; }
 [ -d "$MODEL" ] || { echo "no such model dir: $MODEL"; exit 1; }
 [ -d "$TRUNK" ] || { echo "no such trunk dir: $TRUNK, run scripts/pack-trunk.sh"; exit 1; }
 command -v python3 >/dev/null || { echo "python3 required for the summary"; exit 1; }
@@ -52,7 +52,7 @@ printf 'total_gb\ttrunk_gb\tcache_gb\trep\ts_per_tok\tpeak_rss_gb\tgb_read\tids\
     echo "swaptotal   : $(awk '/SwapTotal/{printf "%.1f GB", $2/1048576}' /proc/meminfo 2>/dev/null)"
     echo "trunk_fs    : $(df -PT "$TRUNK" 2>/dev/null | awk 'NR==2{print $2, $1}')"
     echo "model_fs    : $(df -PT "$MODEL" 2>/dev/null | awk 'NR==2{print $2, $1}')"
-    echo "k3          : $(./bin/k3 --version 2>&1 | head -1)"
+    echo "k3          : $(./bin/litmoe --version 2>&1 | head -1)"
     echo "reps/rung   : $REPS"
     echo "ids         : $IDS"
     echo "gen         : $GEN"
@@ -79,7 +79,7 @@ for rung in $rungs; do
         # wearing the shape of a right one, which is worse than a missing row.
         systemd-run --scope --user -q \
             -p MemoryMax=${TOT}G -p MemorySwapMax=0 \
-            ./bin/k3 "$MODEL" --ids "$IDS" --gen "$GEN" \
+            ./bin/litmoe "$MODEL" --ids "$IDS" --gen "$GEN" \
             --trunk "$TRUNK" --trunk-gb "$TR" --cache-gb "$CA" --incremental \
             --out "$OUT/$tag.json" > "$OUT/$tag.log" 2>&1
         rc=$?

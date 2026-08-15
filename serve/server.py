@@ -1,4 +1,4 @@
-"""server.py -- OpenAI Chat Completions HTTP server for kimi-k3-lean.
+"""server.py -- OpenAI Chat Completions HTTP server for litMoE.
 
 Endpoints:
     GET  /health                 liveness, plus what is loaded
@@ -30,7 +30,7 @@ from .chatfmt import build_prompt
 from .engine import Engine, EngineError
 
 
-SERVER_NAME = "kimi-k3-lean"
+SERVER_NAME = "litMoE"
 
 # Bodies larger than this are refused before they hit memory. A chat request is
 # text; anything at this size is a degenerate payload, not a conversation.
@@ -444,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(engine: Engine, *, host: str = "127.0.0.1", port: int = 8080,
-          model_id: str = "kimi-k3-lean",
+          model_id: str = "litMoE",
           api_key: Optional[str] = None,
           default_max_tokens: int = 256,
           log_requests: bool = True,

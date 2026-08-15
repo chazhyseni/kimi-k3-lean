@@ -347,7 +347,7 @@ flowchart LR
 add("recap", """
 flowchart LR
     HF["1.56 TB checkpoint<br/>96 shards"] --> PK["pack the trunk<br/>108.81 GB"]
-    PK --> ENG["./bin/k3<br/>a 176 KB binary"]
+    PK --> ENG["./bin/litmoe<br/>a 176 KB binary"]
     ENG --> MEM["8.24 GB<br/>peak RSS"]
     MEM --> OUT["Paris.<br/>the right answer"]
     ENG -.->|"1.45 TB of experts<br/>stay on disk"| D["streamed,<br/>never resident"]

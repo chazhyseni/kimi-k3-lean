@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# download-model.sh, fetch the Kimi K3 checkpoint and verify it byte-exactly.
+# fetch-model.sh, fetch the Kimi K3 checkpoint and verify it byte-exactly.
 #
-#   scripts/download-model.sh <dest_dir>
+#   scripts/fetch-model.sh <dest_dir>
 #
 # The checkpoint is 1.56 TB across 96 safetensors shards. A partial or corrupt download
 # does not fail loudly, it produces wrong tokens, so the byte total is checked against
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-DEST="${1:?usage: download-model.sh <dest_dir>}"
+DEST="${1:?usage: fetch-model.sh <dest_dir>}"
 REPO="moonshotai/Kimi-K3"
 
 # Published totals for the released checkpoint. Verified, not assumed.
@@ -37,7 +37,7 @@ EXPECT_BYTES=1560936091448
 # We do NOT use --quiet: silent pip is what made the user think the
 # bootstrap was stuck. Output is visible.
 
-VENV="${HF_VENV:-$HOME/.local/share/kimi-k3-lean/hf-venv}"
+VENV="${HF_VENV:-$HOME/.local/share/litMoE/hf-venv}"
 
 hf_works() {
     # Returns 0 if $VENV/bin/hf exists AND `hf download --help` works.
@@ -81,7 +81,7 @@ export PATH="$VENV/bin:$PATH"
 # NOTE: awk must read to EOF here. Exiting on the first match closes the pipe, `hf` takes
 # SIGPIPE, and under `set -o pipefail` that kills the script with 141 before it prints
 # anything at all.
-REVISION="${K3_REVISION:-}"
+REVISION="${LITMOE_REVISION:-}"
 if [ -z "$REVISION" ]; then
     # The `hf models info` subcommand was removed in huggingface_hub 1.x;
     # the equivalent is the Python API model_info(). Use the venv\'s
@@ -93,7 +93,7 @@ fi
 case "$REVISION" in
     ????????????????????????????????????????) ;;   # 40 hex characters
     *) echo "could not resolve a commit for $REPO (got '${REVISION:-empty}')." >&2
-       echo "  Set K3_REVISION to a commit sha to skip this lookup." >&2
+       echo "  Set LITMOE_REVISION to a commit sha to skip this lookup." >&2
        exit 1 ;;
 esac
 
@@ -187,9 +187,9 @@ fi
 # without SHA-NI it can take longer than the download did.
 echo
 echo "verifying checksums against Hub metadata for $REVISION…"
-echo "  (re-reads the full 1.56 TB; set K3_SKIP_CHECKSUM=1 to skip)"
-if [ "${K3_SKIP_CHECKSUM:-0}" = "1" ]; then
-    echo "  SKIPPED by K3_SKIP_CHECKSUM=1; sizes were still checked above."
+echo "  (re-reads the full 1.56 TB; set LITMOE_SKIP_CHECKSUM=1 to skip)"
+if [ "${LITMOE_SKIP_CHECKSUM:-0}" = "1" ]; then
+    echo "  SKIPPED by LITMOE_SKIP_CHECKSUM=1; sizes were still checked above."
 else
     hf cache verify "$REPO" --revision "$REVISION" --local-dir "$DEST" \
         --fail-on-missing-files

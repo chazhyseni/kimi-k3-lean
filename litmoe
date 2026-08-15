@@ -1,0 +1,289 @@
+#!/usr/bin/env bash
+# litMoE — CLI launcher.
+#
+#   litMoE start              start the OpenAI server
+#   litMoE stop               stop it
+#   litMoE status             show running PID + URL
+#   litMoE chat -m "hello"    one-shot chat (alias: ask)
+#   litMoE models             curl /v1/models
+#   litMoE fetch              download K3 weights (~982 GB, resumable)
+#   litMoE doctor             print install state
+#   litMoE stack up [--webui]  LAN stack (Caddy + gateway + Open WebUI)
+#   litMoE stack down
+#   litMoE uninstall          stop server, remove launcher
+#   litMoE help
+
+set -euo pipefail
+
+# --- find python ---
+if command -v python3 >/dev/null 2>&1; then LITMOE_PY=python3
+elif command -v python >/dev/null 2>&1; then LITMOE_PY=python
+else echo "python not found" >&2; exit 1; fi
+
+ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m  !\033[0m %s\n' "$*" >&2; }
+say()  { printf '\033[1;36m==>\033[0m %s\n' "$*" >&2; }
+
+# --- find repo ---
+_k3_find_repo() {
+    [ -n "${LITMOE_HOME:-}" ] && [ -f "$LITMOE_HOME/serve/__main__.py" ] && { echo "$LITMOE_HOME"; return 0; }
+    [ -f "$HOME/.litMoE/serve/__main__.py" ] && { echo "$HOME/.litMoE"; return 0; }
+    local me="${BASH_SOURCE[0]}"
+    while [ -L "$me" ]; do me=$(readlink "$me"); done
+    local d; d=$(cd "$(dirname "$me")" && pwd)
+    [ -f "$d/serve/__main__.py" ] && { echo "$d"; return 0; }
+    return 1
+}
+
+LITMOE_HOME=$(_k3_find_repo 2>/dev/null || echo "")
+if [ -z "$LITMOE_HOME" ]; then
+    echo "litMoE: repo not found. Install with:" >&2
+    echo "  curl -fsSL https://raw.githubusercontent.com/chazhyseni/litMoE/main/bootstrap.sh | bash" >&2
+    exit 1
+fi
+export LITMOE_HOME
+
+# --- load config ---
+LITMOE_CONF="${LITMOE_CONF:-$LITMOE_HOME/server.env}"
+_k3_load() {
+    # Portable across bash 3.2 (macOS) and bash 4+. Uses eval for
+    # indirect variable expansion instead of ${!var} which breaks on
+    # macOS's older bash.
+    local var="$1" def="$2"
+    eval "local cur=\"\${$var:-}\""
+    local val=""
+    if [ -z "$cur" ] && [ -f "$LITMOE_CONF" ]; then
+        val=$(grep -E "^${var}=" "$LITMOE_CONF" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    fi
+    if [ -n "$val" ]; then
+        eval "export $var=\"\$val\""
+    elif [ -z "$cur" ]; then
+        eval "export $var=\"\$def\""
+    fi
+}
+_k3_load LITMOE_PORT 8080
+_k3_load LITMOE_HOST 127.0.0.1
+_k3_load LITMOE_API_KEY ""
+_k3_load LITMOE_MODEL_DIR "$LITMOE_HOME/checkpoints/k3"
+_k3_load LITMOE_MODEL_NAME kimi-k3
+# LITMOE_MODEL is an alias for LITMOE_MODEL_DIR; use eval for bash 3.2 compat
+if [ -z "${LITMOE_MODEL:-}" ]; then
+    LITMOE_MODEL="$LITMOE_MODEL_DIR"
+    export LITMOE_MODEL
+fi
+
+# --- subcommands ---
+cmd="${1:-help}"; shift 2>/dev/null || true
+
+_k3_status() {
+    local pid=""
+    [ -f "$LITMOE_HOME/server.pid" ] && pid=$(cat "$LITMOE_HOME/server.pid" 2>/dev/null || echo "")
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "running: PID $pid  http://$LITMOE_HOST:$LITMOE_PORT"
+        return 0
+    fi
+    # try to discover by port
+    local found=""
+    if command -v lsof >/dev/null 2>&1; then
+        found=$(lsof -ti tcp:"$LITMOE_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+    elif command -v ss >/dev/null 2>&1; then
+        found=$(ss -ltnp 2>/dev/null | grep ":$LITMOE_PORT " | grep -oP 'pid=\K[0-9]+' | head -1)
+    fi
+    if [ -n "$found" ] && kill -0 "$found" 2>/dev/null; then
+        echo "$found" > "$LITMOE_HOME/server.pid" 2>/dev/null || true
+        echo "running (discovered): PID $found  http://$LITMOE_HOST:$LITMOE_PORT"
+        return 0
+    fi
+    echo "no server running on http://$LITMOE_HOST:$LITMOE_PORT"
+    return 1
+}
+
+_k3_stop() {
+    if [ -f "$LITMOE_HOME/server.pid" ]; then
+        local pid; pid=$(cat "$LITMOE_HOME/server.pid" 2>/dev/null || echo "")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            for i in 1 2 3 4 5; do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+        fi
+        rm -f "$LITMOE_HOME/server.pid"
+    fi
+    # free port (lsof works on macOS + Linux)
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -ti tcp:"$LITMOE_PORT" 2>/dev/null | xargs kill 2>/dev/null || true
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -k "${LITMOE_PORT}/tcp" 2>/dev/null || true
+    fi
+    echo "stopped"
+}
+
+_k3_serve() {
+    _k3_stop  # idempotent
+    [ -d "$LITMOE_MODEL" ] || mkdir -p "$LITMOE_MODEL"
+    # generate token if none
+    if [ -z "$LITMOE_API_KEY" ]; then
+        LITMOE_API_KEY=$(head -c16 /dev/urandom 2>/dev/null | od -An -tx1 | tr -d ' \n' || openssl rand -hex 16 2>/dev/null || echo "k3-$$")
+        export LITMOE_API_KEY
+    fi
+    # write env
+    cat > "$LITMOE_CONF" <<EOF
+LITMOE_HOME=$LITMOE_HOME
+LITMOE_HOST=$LITMOE_HOST
+LITMOE_PORT=$LITMOE_PORT
+LITMOE_API_KEY=$LITMOE_API_KEY
+LITMOE_MODEL=$LITMOE_MODEL
+LITMOE_MODEL_NAME=$LITMOE_MODEL_NAME
+EOF
+    chmod 600 "$LITMOE_CONF"
+
+    cd "$LITMOE_HOME"
+    export LD_LIBRARY_PATH="$LITMOE_HOME/bin:${LD_LIBRARY_PATH:-}"
+    "$LITMOE_PY" -u serve/__main__.py "$LITMOE_MODEL" \
+        --host "$LITMOE_HOST" --port "$LITMOE_PORT" \
+        --api-key "$LITMOE_API_KEY" --model-id "$LITMOE_MODEL_NAME" \
+        "$@" >>"$LITMOE_HOME/server.log" 2>&1 </dev/null &
+    local pid=$!
+    echo "$pid" > "$LITMOE_HOME/server.pid"
+    echo "started: PID $pid  http://$LITMOE_HOST:$LITMOE_PORT"
+    echo "log:     $LITMOE_HOME/server.log"
+    # wait for ready
+    for i in $(seq 1 30); do
+        local code
+        code=$(curl -sS --max-time 1 -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $LITMOE_API_KEY" \
+            "http://$LITMOE_HOST:$LITMOE_PORT/v1/models" 2>/dev/null || echo 000)
+        [ "$code" = "200" ] && { echo "ready"; return 0; }
+        sleep 1
+    done
+    echo "not ready after 30s; check $LITMOE_HOME/server.log"
+    return 1
+}
+
+_k3_chat() {
+    _k3_status >/dev/null 2>&1 || { echo "no server running"; return 1; }
+    local model="$LITMOE_MODEL_NAME" message="" stream=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --model)  model="$2"; shift 2 ;;
+            -m|--message) message="$2"; shift 2 ;;
+            --stream) stream=1; shift ;;
+            *) message="$1"; shift ;;
+        esac
+    done
+    : "${message:?no message given (-m \"...\")}"
+    : "${LITMOE_API_KEY:?no token in $LITMOE_CONF}"
+    local payload
+    payload=$("$LITMOE_PY" -c "
+import json,sys
+print(json.dumps({'model':sys.argv[1],'messages':[{'role':'user','content':sys.argv[2]}],'max_tokens':256,'stream':bool(int(sys.argv[3]))}))
+" "$model" "$message" "$stream")
+    if [ "$stream" = "1" ]; then
+        curl -sSN -X POST -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $LITMOE_API_KEY" \
+            "http://$LITMOE_HOST:$LITMOE_PORT/v1/chat/completions" -d "$payload"
+    else
+        curl -sS -X POST -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $LITMOE_API_KEY" \
+            "http://$LITMOE_HOST:$LITMOE_PORT/v1/chat/completions" -d "$payload"
+    fi
+}
+
+_k3_models() {
+    _k3_status >/dev/null 2>&1 || { echo "no server running"; return 1; }
+    curl -sS -H "Authorization: Bearer $LITMOE_API_KEY" "http://$LITMOE_HOST:$LITMOE_PORT/v1/models"
+}
+
+_k3_fetch() {
+    local model_dir="${LITMOE_MODEL:-$LITMOE_HOME/checkpoints/k3}"
+    export LITMOE_DIR="$LITMOE_HOME" LITMOE_MODEL_DIR="$model_dir"
+    exec "$LITMOE_HOME/scripts/fetch-model.sh" "$model_dir"
+}
+
+_k3_doctor() {
+    echo "== litMoE doctor =="
+    echo "repo:       $LITMOE_HOME"
+    for lib in liblitmoe.so liblitmoe.dylib liblitmoe.dll; do
+        if [ -f "$LITMOE_HOME/bin/$lib" ]; then
+            echo "engine:     bin/$lib ($(wc -c < "$LITMOE_HOME/bin/$lib" 2>/dev/null) bytes)"
+            break
+        fi
+    done
+    echo "model dir:  $LITMOE_MODEL"
+    if [ -d "$LITMOE_MODEL" ]; then
+        echo "  files:    $(find "$LITMOE_MODEL" -name '*.safetensors' 2>/dev/null | wc -l) safetensors"
+    fi
+    echo "port:       $LITMOE_PORT"
+    echo "token set:  $([ -n "$LITMOE_API_KEY" ] && echo yes || echo NO)"
+    _k3_status || true
+    echo "python:     $($LITMOE_PY --version 2>&1)"
+}
+
+_k3_stack() {
+    local sub="${1:-status}"; shift 2>/dev/null || true
+    local d="$LITMOE_HOME/deploy"
+    [ -d "$d" ] || { echo "no deploy/ at $d"; return 1; }
+    command -v docker >/dev/null 2>&1 || { echo "docker not installed"; return 1; }
+    local compose=(docker compose -f "$d/compose.yml")
+    case "$sub" in
+        up)
+            local profiles=()
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --webui) profiles+=(--profile with-webui); shift ;;
+                    --k3)    profiles+=(--profile with-k3); shift ;;
+                    *)       shift ;;
+                esac
+            done
+            [ -f "$d/.env" ] || cp "$d/.env.example" "$d/.env" 2>/dev/null || true
+            "${compose[@]}" "${profiles[@]}" up -d --build
+            echo "stack up. status: litMoE stack status"
+            ;;
+        down)   "${compose[@]}" down "$@" ;;
+        status)  "${compose[@]}" ps ;;
+        logs)    "${compose[@]}" logs -f "$@" ;;
+        *)       echo "usage: stack <up [--webui] [--k3] | down | status | logs>"; return 2 ;;
+    esac
+}
+
+_k3_uninstall() {
+    _k3_stop
+    rm -f "$HOME/.local/bin/litMoE"
+    if command -v hermes >/dev/null 2>&1; then
+        hermes config unset model.base_url model.api_key model.default 2>/dev/null || true
+    fi
+    echo "uninstalled. repo at $LITMOE_HOME kept (rm -rf to wipe)"
+}
+
+_k3_help() {
+    cat <<EOF
+litMoE — local Kimi K3 OpenAI server
+
+  start              start the server on http://$LITMOE_HOST:$LITMOE_PORT
+  stop               stop the server
+  status             show running PID + URL
+  chat -m "msg"      one-shot chat (alias: ask)
+  models             curl /v1/models
+  fetch              download K3 weights (~982 GB, resumable)
+  doctor             print install state
+  stack up [--webui] LAN stack with Caddy + Open WebUI
+  stack down         stop LAN stack
+  uninstall          stop server, remove launcher
+  help               this
+
+Env (via $LITMOE_CONF or shell):
+  LITMOE_HOST, LITMOE_PORT, LITMOE_API_KEY, LITMOE_MODEL_DIR, LITMOE_MODEL_NAME
+EOF
+}
+
+case "$cmd" in
+    start|serve) _k3_serve "$@" ;;
+    stop)         _k3_stop ;;
+    status)       _k3_status ;;
+    chat|ask)     _k3_chat "$@" ;;
+    models|list)  _k3_models ;;
+    fetch)        _k3_fetch "$@" ;;
+    doctor)       _k3_doctor ;;
+    stack)        _k3_stack "$@" ;;
+    uninstall)    _k3_uninstall ;;
+    help|--help|-h) _k3_help ;;
+    *)            echo "unknown: $cmd (try: help)"; exit 2 ;;
+esac

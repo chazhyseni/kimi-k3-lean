@@ -223,7 +223,7 @@ KV quality matters less than for a pure-GQA model.
 ## Download Speed
 
 ### Problem
-The current `download-model.sh` uses `hf download` which fetches shards
+The current `fetch-model.sh` uses `hf download` which fetches shards
 sequentially. On a 1 Gbps connection this gives 180 MB/s per shard (good)
 but wastes the connection's parallel capacity. The first shard is
 always slow (656 kB/s) because of HF Xet warmup + unauthenticated rate

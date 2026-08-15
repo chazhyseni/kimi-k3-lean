@@ -1,4 +1,4 @@
-# kimi-k3-lean network deployment — Caddy reverse proxy.
+# litMoE network deployment — Caddy reverse proxy.
 #
 # Defaults to a Caddy-internal TLS cert (good for LAN pilots). For a
 # public-facing deployment, swap `tls internal` for your real cert.
