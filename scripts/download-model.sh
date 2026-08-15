@@ -88,18 +88,32 @@ ensure_hf() {
                 # --disable-pip-version-check: skip the "new pip available"
                 # nag, which itself is a network call.
                 # --no-cache-dir: don't leave partial state.
+                # NO `|| true` here: we want a failure to propagate so
+                # ensure_hf() returns 1 and the caller can act on it.
                 "$HF_VENV/bin/pip" install --quiet --no-deps \
                     --timeout 20 --no-cache-dir --disable-pip-version-check \
-                    "filelock>=3.12" "huggingface_hub>=1.0,<1.2" 2>>"${DOWNLOAD_LOG:-/dev/null}" || true
+                    "filelock>=3.12" "huggingface_hub>=1.0,<1.2" 2>>"${DOWNLOAD_LOG:-/dev/null}" || return 1
             fi
         fi
     fi
     if [ -x "$HF_VENV/bin/hf" ]; then
         # Prepend the venv to PATH so all subsequent hf calls use it.
         export PATH="$HF_VENV/bin:$PATH"
+        return 0
     fi
+    return 1
 }
-ensure_hf
+ensure_hf || {
+    echo "could not install huggingface_hub into a venv. Likely cause:" >&2
+    echo "  no internet to pypi, or no internet to PyPI mirrors that have" >&2
+    echo "  huggingface_hub + filelock." >&2
+    echo "fix one of:" >&2
+    echo "  - install pipx (apt install pipx) and re-run," >&2
+    echo "  - or use uv (uv tool install huggingface_hub) and re-run," >&2
+    echo "  - or manually download the 1.56 TB checkpoint into $DEST" >&2
+    echo "    and verify with shard_sizes.txt." >&2
+    exit 1
+}
 
 # An older installation can provide `hf` without `hf cache verify`, which is what turns
 # the size check below into a real integrity check.
