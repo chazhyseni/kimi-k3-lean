@@ -78,7 +78,19 @@ ensure_hf() {
                 # and pin huggingface_hub so we don't get a too-new version that
                 # abandoned it. >=1.0,<1.2 covers hf CLI rename and still works
                 # with pip-system filelock 3.x.
-                "$HF_VENV/bin/pip" install --quiet "filelock>=3.12" "huggingface_hub>=1.0,<1.2" || true
+                # --no-deps: huggingface_hub's CLI itself doesn't need
+                # markdown-it-py/pygments/mdurl (those are for the
+                # transformers+rich Jupyter rendering stack). Installing
+                # with deps forces a 5-retry storm on offline hosts that
+                # don't have those packages on their local pypi mirror.
+                # --timeout 20: fail fast on offline hosts instead of
+                # hanging 5x per package.
+                # --disable-pip-version-check: skip the "new pip available"
+                # nag, which itself is a network call.
+                # --no-cache-dir: don't leave partial state.
+                "$HF_VENV/bin/pip" install --quiet --no-deps \
+                    --timeout 20 --no-cache-dir --disable-pip-version-check \
+                    "filelock>=3.12" "huggingface_hub>=1.0,<1.2" 2>>"${DOWNLOAD_LOG:-/dev/null}" || true
             fi
         fi
     fi
