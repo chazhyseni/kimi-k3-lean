@@ -131,8 +131,18 @@ echo "verifying…"
 # find, not `ls | wc -l`: under `set -euo pipefail` a glob that matches nothing makes
 # ls exit non-zero and the script dies HERE, so the "download is incomplete" message
 # below -- the entire point of this verification block -- would never be reached.
-N=$(find "$DEST" -maxdepth 1 -name '*.safetensors' | wc -l)
-B=$(find "$DEST" -maxdepth 1 -name '*.safetensors' -printf '%s\n' | awk '{s+=$1} END{print s+0}')
+N=$(find "$DEST" -maxdepth 1 -name '*.safetensors' | wc -l | tr -d ' ')
+# Portable size sum: GNU stat -c%s, BSD/macOS stat -f%z.
+if stat -c%s /dev/null >/dev/null 2>&1; then
+    size_cmd="stat -c%s"
+else
+    size_cmd="stat -f%z"
+fi
+B=0
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    B=$((B + $("$size_cmd" "$f")))
+done < <(find "$DEST" -maxdepth 1 -name '*.safetensors')
 
 printf '  shards : %s (expect %s)\n' "$N" "$EXPECT_SHARDS"
 printf '  bytes  : %s (expect %s)\n' "$B" "$EXPECT_BYTES"
