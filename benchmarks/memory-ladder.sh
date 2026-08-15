@@ -5,7 +5,7 @@
 #
 # Defaults to 3 repetitions per rung, because the measured run-to-run spread on an
 # identical configuration is 33%, a single sample per rung cannot distinguish an effect
-# from noise. See docs/BENCHMARKING.md.
+# from noise. See docs/PERFORMANCE.md.
 #
 # LINUX ONLY. Imposing a memory ceiling needs cgroups via systemd-run. There is no
 # portable equivalent, and without a real ceiling every rung simply uses as much memory

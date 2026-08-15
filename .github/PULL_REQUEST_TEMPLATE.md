@@ -17,7 +17,7 @@
 ## Numbers, if this is a performance change
 
 <!-- Timing claims need a noise floor. Report at least 3 runs of each arm, or say
-     explicitly that the effect was not measured against variance. See docs/BENCHMARKING.md. -->
+     explicitly that the effect was not measured against variance. See docs/PERFORMANCE.md. -->
 
 | arm | run 1 | run 2 | run 3 | mean |
 |-----|-------|-------|-------|------|
