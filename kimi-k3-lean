@@ -46,19 +46,31 @@ export K3_HOME
 # --- load config ---
 K3_CONF="${K3_CONF:-$K3_HOME/server.env}"
 _k3_load() {
-    local var="$1" def="$2" cur="${!1:-}" val=""
+    # Portable across bash 3.2 (macOS) and bash 4+. Uses eval for
+    # indirect variable expansion instead of ${!var} which breaks on
+    # macOS's older bash.
+    local var="$1" def="$2"
+    eval "local cur=\"\${$var:-}\""
+    local val=""
     if [ -z "$cur" ] && [ -f "$K3_CONF" ]; then
         val=$(grep -E "^${var}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2- || true)
     fi
-    : "${!var:=${val:-$def}}"
-    export "$var"
+    if [ -n "$val" ]; then
+        eval "export $var=\"\$val\""
+    elif [ -z "$cur" ]; then
+        eval "export $var=\"\$def\""
+    fi
 }
 _k3_load K3_PORT 8080
 _k3_load K3_HOST 127.0.0.1
 _k3_load K3_API_KEY ""
 _k3_load K3_MODEL_DIR "$K3_HOME/checkpoints/k3"
 _k3_load K3_MODEL_NAME kimi-k3
-: "${K3_MODEL:=$K3_MODEL_DIR}"
+# K3_MODEL is an alias for K3_MODEL_DIR; use eval for bash 3.2 compat
+if [ -z "${K3_MODEL:-}" ]; then
+    K3_MODEL="$K3_MODEL_DIR"
+    export K3_MODEL
+fi
 
 # --- subcommands ---
 cmd="${1:-help}"; shift 2>/dev/null || true
@@ -95,11 +107,11 @@ _k3_stop() {
         fi
         rm -f "$K3_HOME/server.pid"
     fi
-    # free port
-    if command -v fuser >/dev/null 2>&1; then
-        fuser -k "${K3_PORT}/tcp" 2>/dev/null || true
-    elif command -v lsof >/dev/null 2>&1; then
+    # free port (lsof works on macOS + Linux)
+    if command -v lsof >/dev/null 2>&1; then
         lsof -ti tcp:"$K3_PORT" 2>/dev/null | xargs kill 2>/dev/null || true
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -k "${K3_PORT}/tcp" 2>/dev/null || true
     fi
     echo "stopped"
 }

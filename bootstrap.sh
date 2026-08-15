@@ -109,11 +109,11 @@ if [ -f "$K3_DIR/server.pid" ]; then
     old=$(cat "$K3_DIR/server.pid" 2>/dev/null || echo "")
     [ -n "$old" ] && kill "$old" 2>/dev/null && sleep 0.5 || true
 fi
-# free the port if anything else is on it
-if command -v fuser >/dev/null 2>&1; then
-    fuser -k "${K3_PORT}/tcp" 2>/dev/null || true
-elif command -v lsof >/dev/null 2>&1; then
+# free the port if anything else is on it (lsof works on macOS + Linux)
+if command -v lsof >/dev/null 2>&1; then
     lsof -ti tcp:"$K3_PORT" 2>/dev/null | xargs kill 2>/dev/null || true
+elif command -v fuser >/dev/null 2>&1; then
+    fuser -k "${K3_PORT}/tcp" 2>/dev/null || true
 fi
 
 # --- 5. start server ---
