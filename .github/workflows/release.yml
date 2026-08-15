@@ -159,7 +159,7 @@ jobs:
           cp "${ARTIFACT}.zip" "$GITHUB_WORKSPACE/artifacts/"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: litMoE-${{ matrix.os }}-${{ matrix.arch }}
           path: artifacts/*
