@@ -186,20 +186,62 @@ Wraps existing k3_ops.c kernels in the ArchOps vtable.
 Only 23 of 92 layers need KV cache (the full attention layers).
 The other 69 layers use linear attention (O(1) state, no KV cache).
 
-| Context | BF16 KV (23 layers) | INT4 KV (23 layers) |
-|---------|--------------------|--------------------|
-| 32K | 2.9 GB | 0.8 GB |
-| 128K | 11.5 GB | 3.1 GB |
-| 262K (max) | 23.0 GB | 6.1 GB |
+| Context | BF16 KV (23 layers) | INT4 KV | INT2 KV |
+|---------|--------------------|---------|---------|
+| 128K | 11.5 GB | 3.1 GB | 1.6 GB |
+| 256K | 23.0 GB | 6.1 GB | 3.2 GB |
+| 512K | 47.0 GB | 12.2 GB | 6.5 GB |
+| 1M | 94.0 GB | 24.4 GB | 12.9 GB |
 
-INT4 KV at 262K context: 6.1 GB. Fits laptop preset (8 GB total).
+### Fitting extended context in laptop (8 GB):
 
-No context capping needed. No cache eviction needed.
+| Config | Max context | How |
+|--------|------------|-----|
+| INT4, trunk=3, expert=1 | 168K | Default laptop |
+| INT4, trunk=1.5, expert=0.5 | 251K | Reduced trunk |
+| INT2, trunk=2, expert=0.5 | 435K | INT2 + reduced |
+| INT2, trunk=1, expert=0.5 | 475K | INT2 + minimal |
 
-The INT4 format uses per-32-element MXFP4-style blocks (same as the
-existing k3_matmul_mxfp4 dequantize infrastructure).
+### Fitting 1M context:
 
-## Implementation Phases
+| Preset | Quant | Trunk | Expert | KV | Total | Fits? |
+|--------|-------|-------|--------|----|----|-------|
+| Laptop (8 GB) | INT2 | 0.5 | 0.5 | 12.9 | 13.9 | No (needs 16 GB) |
+| Desktop (32 GB) | INT4 | 4 | 3 | 24.4 | 31.4 | Yes |
+| Desktop (32 GB) | INT2 | 10 | 5 | 12.9 | 27.9 | Yes (comfortable) |
+
+No hard capping. The context limit is dynamically computed from
+available RAM after trunk + expert cache are allocated. The engine
+tells the user: "context limited to 256K based on your RAM. Use
+--kv-quant int2 for up to 512K."
+
+INT2 quality: ~3-5% degradation on long-context tasks (measured by
+vLLM on Llama 3). Acceptable for 512K+ context where the alternative
+is truncation. The Qwen3.8 model only needs KV for 23/92 layers, so
+KV quality matters less than for a pure-GQA model.
+
+## Download Speed
+
+### Problem
+The current `download-model.sh` uses `hf download` which fetches shards
+sequentially. On a 1 Gbps connection this gives 180 MB/s per shard (good)
+but wastes the connection's parallel capacity. The first shard is
+always slow (656 kB/s) because of HF Xet warmup + unauthenticated rate
+limits + venv setup time.
+
+### Fix: Parallel shard downloads
+`scripts/fetch-model.sh` (new) downloads 4-8 shards in parallel using
+`xargs -P`. On a 1 Gbps link with 8 parallel: theoretical 4-8x speedup,
+practical ~3-4x (connection saturates around 4 parallel on most ISPs).
+
+Download config files first (small, needed for arch detection), then
+all shards in parallel. Resumable — skips already-downloaded shards.
+Same verification (shard count + byte total + per-shard sizes + checksums).
+
+### Speed comparison (1.56 TB Kimi K3 checkpoint):
+- Sequential `hf download`: ~2.5 hours at 180 MB/s
+- Parallel x8 `fetch-model.sh`: ~40 min at ~1 GB/s aggregate
+- With HF_TOKEN (authenticated): +20-30% rate limit headroom
 
 | Phase | What | Time | Risk |
 |-------|------|------|------|
