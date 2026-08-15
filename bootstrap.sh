@@ -182,76 +182,64 @@ else
 fi
 
 # ----- 3b. model dir -----
-# Default: download K3 weights in the background right now so chat
-# completes automatically in ~4 hours. Set K3_SKIP_DL=1 to skip (e.g.
-# if you already have them on disk, or just want the HTTP scaffold).
+# Default: download K3 weights in the background and start the server.
+# The model does not perform without the weights (the C engine returns
+# engine_error on /v1/chat/completions with no model on disk). Set
+# K3_SKIP_DL=1 to skip the download.
+DL_NEEDED=1
 if [ "${K3_SKIP_DL:-0}" = "1" ]; then
     ok "skipping model download (K3_SKIP_DL=1)"
+    DL_NEEDED=0
 elif find "$K3_MODEL_DIR" -maxdepth 2 -name "*.safetensors" -print -quit 2>/dev/null | grep -q .; then
-    ok "model already at $K3_MODEL_DIR (with safetensors shards)"
+    ok "model already at $K3_MODEL_DIR (has safetensors shards)"
+    DL_NEEDED=0
 elif [ -f "$K3_DIR/download.pid" ] && kill -0 "$(cat "$K3_DIR/download.pid" 2>/dev/null)" 2>/dev/null; then
     pid=$(cat "$K3_DIR/download.pid")
     ok "model download in progress (pid $pid); tail $K3_DIR/download.log"
-else
+    DL_NEEDED=0
+fi
+
+if [ "$DL_NEEDED" = "1" ]; then
     # Stale partial download (e.g. crashed earlier with .cache/ but no
-    # shards). Reset so the next download attempt starts clean.
+    # shards). Warn the user but don't delete -- we don't know if they
+    # put something precious there.
     if [ -d "$K3_MODEL_DIR" ] && [ -n "$(ls -A "$K3_MODEL_DIR" 2>/dev/null)" ]; then
         warn "model dir had non-shard content (stale partial download?); keeping it"
         warn "  if the download keeps failing, run:"
         warn "    rm -rf $K3_MODEL_DIR && kimi-k3-lean fetch"
     fi
-fi
-elif [ ! -t 0 ] && [ ! "${K3_QUIET:-0}" = "1" ]; then
-    # Non-interactive (curl|bash) -- default to auto-download.
     mkdir -p "$K3_MODEL_DIR"
     say "downloading Kimi K3 weights in background (~982 GB, ~4 hours, resumable)"
-    say "tail $K3_DIR/download.log for progress"
-    say "(set K3_SKIP_DL=1 if you already have the weights)"
-    # Setup-and-serve.sh runs detached so the scaffold + server come up
-    # while the download continues in the background.
-    # Pre-flight: ensure `hf` actually works before starting the
-    # download. Old huggingface_hub installs (system pip --user, broken
-    # by API changes) report success on `hf --help` but crash with
-    # `TypeError: __init__() got an unexpected keyword argument 'mode'`
-    # the moment they hit a real file. Repair via pipx when possible.
+    say "  tail -f $K3_DIR/download.log for progress"
+    # Pre-flight: skip the 4-hour transfer if `hf` is broken. Old
+    # system huggingface_hub installs report success on `hf --help`
+    # but crash with `TypeError: __init__() got an unexpected keyword
+    # argument 'mode'` the moment they touch a real file. The fix is
+    # in scripts/download-model.sh (isolated venv). If the user has
+    # a fresh-enough `hf`, this is a no-op.
     if command -v hf >/dev/null 2>&1; then
         if ! hf cache verify --help >/dev/null 2>&1; then
-            warn "existing \`hf\` is broken; repairing via pipx"
-            if command -v pipx >/dev/null 2>&1; then
-                pipx install --force "huggingface_hub>=1.0" >/dev/null 2>&1 || true
-                ok "reinstalled hf via pipx"
-            else
-                warn "no pipx on PATH; the download will likely fail."
-                warn "  fix: apt install pipx && pipx install huggingface_hub"
-            fi
+            warn "system \`hf\` is missing 'cache verify'; download-model.sh will repair"
         fi
     else
-        warn "\`hf\` not on PATH; bootstrap needs it to download K3 weights."
-        warn "  install with: pipx install huggingface_hub"
+        warn "\`hf\` not on PATH; download-model.sh will install a venv"
     fi
 
     export K3_DIR K3_MODEL_DIR
     nohup bash "$K3_DIR/scripts/download-model.sh" "$K3_MODEL_DIR" \
         >> "$K3_DIR/download.log" 2>&1 &
     echo "$!" > "$K3_DIR/download.pid"
+    ok "download started (pid $(cat "$K3_DIR/download.pid"))"
     # Quick pre-flight: if the download subprocess exits within 5
     # seconds it's almost certainly the broken-hf bug. Catch it
     # here so the user doesn't discover it 4 hours from now.
     sleep 5
     if ! kill -0 "$(cat "$K3_DIR/download.pid")" 2>/dev/null; then
         warn "download subprocess exited early; check $K3_DIR/download.log"
-        warn "  common cause: hf CLI mismatched with system filelock."
-        warn "  fix: delete ~/.local/share/kimi-k3-lean/hf-venv and re-run,"
+        warn "  fix: rm -rf ~/.local/share/kimi-k3-lean/hf-venv and re-run,"
         warn "       or set K3_SKIP_DL=1 and run \`kimi-k3-lean fetch\` separately."
     fi
-else
-    warn "no model at $K3_MODEL_DIR"
-    warn "to download the real Kimi K3 (~982 GB, ~4 hours):"
-    warn "  K3_DIR=$K3_DIR bash $K3_DIR/scripts/setup-and-serve.sh --download-only"
-    # create empty placeholder so the rest of the pipeline doesn't 404
-    mkdir -p "$K3_MODEL_DIR"
 fi
-
 # ----- 4. launch server in background -----
 say "launching kimi-k3-lean server (background)"
 export LD_LIBRARY_PATH="$K3_DIR/bin:${LD_LIBRARY_PATH:-}"
