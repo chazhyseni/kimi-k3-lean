@@ -205,8 +205,28 @@ if [ "${K3_SKIP_DL:-0}" = "1" ]; then
 elif [ "${K3_FORCE_FULL:-0}" = "1" ]; then
     : # skip auto-detect, proceed to full download
 elif find "$K3_MODEL_DIR" -maxdepth 2 -name "*.safetensors" -print -quit 2>/dev/null | grep -q .; then
-    ok "model already at $K3_MODEL_DIR (has safetensors shards)"
-    DL_NEEDED=0
+    # Check whether the model is complete enough to load. The full K3
+    # checkpoint is 1.56 TB across 96 shards; if we see fewer than 96
+    # shards, the engine can't bind all tensors and falls back to
+    # _NullEngine (chat returns engine_error).
+    n_shards=$(find "$K3_MODEL_DIR" -maxdepth 1 -name "*.safetensors" | wc -l)
+    have_bytes=$(find "$K3_MODEL_DIR" -maxdepth 1 -name "*.safetensors" -printf "%s\n" | awk "{s+=\$1} END {print s+0}")
+    expect_shards=96
+    expect_bytes=1560936091448
+    if [ "$n_shards" -eq "$expect_shards" ] && [ "$have_bytes" -eq "$expect_bytes" ]; then
+        ok "model complete at $K3_MODEL_DIR"
+        DL_NEEDED=0
+    elif [ "$n_shards" -ge 1 ]; then
+        # Partial: model download in progress, or aborted. Engine will
+        # fall back to _NullEngine until completion. Tell the user.
+        pct=$(awk -v h="$have_bytes" -v e="$expect_bytes" "BEGIN{printf \"%.1f\", h*100/e}")
+        warn "model PARTIAL at $K3_MODEL_DIR: $n_shards/$expect_shards shards, $pct% of expected size"
+        warn "  the engine will run with the scaffold only (engine_error on /v1/chat/completions)"
+        warn "  until the download completes:"
+        warn "    tail -f $K3_DIR/download.log   # progress"
+        warn "    kimi-k3-lean stop && kimi-k3-lean start   # restart once complete"
+        DL_NEEDED=0
+    fi
 elif [ -f "$K3_DIR/download.pid" ] && kill -0 "$(cat "$K3_DIR/download.pid" 2>/dev/null)" 2>/dev/null; then
     pid=$(cat "$K3_DIR/download.pid")
     ok "model download in progress (pid $pid); tail $K3_DIR/download.log"
