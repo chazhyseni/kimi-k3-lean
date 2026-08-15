@@ -42,38 +42,25 @@ to a Python server via ctypes. That library is the seam.
 curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
 ```
 
-This brings up everything in unattended order:
-- installs build prereqs
-- clones the repo
-- builds `libk3.so` (3 GATEs pass)
-- **auto-detects existing K3-shaped weights** on disk at common paths
-  (e.g. `~/kimi-local/models/kimi-linear-shards` is the 92 GB Warp
-  Linear variant; `kimi-linear.waste` is the 18 GB expert-only
-  variant). If found, it symlinks them in -- no download.
-- **otherwise starts downloading the 982 GB full K3 checkpoint**
-  in the background (~4 hours, resumable).
-- starts the OpenAI server on `http://127.0.0.1:8080`
-- registers `kimi-k3` with the launcher and your harness
+This does five things in order, no detours:
+1. Clones to `~/.kimi-k3-lean` (~5 sec)
+2. Builds `libk3.so` (~30 sec)
+3. Starts the OpenAI server on `http://127.0.0.1:8080`
+4. Waits for `/v1/models` to return 200
+5. Installs the `kimi-k3-lean` launcher to `~/.local/bin`
 
-The model is registered with the server immediately (the launcher can
-list it, Hermes can pick it up), but chat completions return
-`engine_error` envelopes until weights are on disk. When they are:
+The server starts immediately with or without weights. Without weights,
+`/v1/models` works and `/v1/chat/completions` returns a clear
+`engine_error` JSON envelope. Download weights when you're ready:
 
 ```bash
-kimi-k3-lean stop
-kimi-k3-lean start
-kimi-k3-lean chat -m "hello"     # works
+kimi-k3-lean fetch          # ~982 GB, ~4 hours, resumable
+kimi-k3-lean stop && kimi-k3-lean start   # restart with weights
+kimi-k3-lean chat -m "hello"              # now works
 ```
 
-Or just `tail -f ~/.kimi-k3-lean/download.log` to watch progress.
-
-If you don't want the auto-detected variant picked up (e.g. you have a
-small lean variant on disk but you want the 982 GB full K3 anyway),
-set `K3_FORCE_FULL=1`.
-
-If you want the scaffold without ANY model (the server still starts,
-chat returns `engine_error` envelopes, but you can test the HTTP API),
-set `K3_SKIP_DL=1`.
+If you already have K3-shaped weights on disk (e.g. `~/kimi-local/models/kimi-linear-shards`),
+bootstrap symlinks them in automatically — no download needed.
 
 ---
 
@@ -84,13 +71,12 @@ kimi-k3-lean start            # start the server
 kimi-k3-lean stop             # stop the server
 kimi-k3-lean chat -m "hello"  # one-shot chat (alias: ask)
 kimi-k3-lean doctor           # print install state
-
 kimi-k3-lean fetch            # download K3 weights (~982 GB, ~4 hrs)
 kimi-k3-lean stack up --webui # full LAN stack with Open WebUI
-kimi-k3-lean uninstall        # remove everything
+kimi-k3-lean uninstall        # stop server, remove launcher
 ```
 
-That's it.  The launcher is the only entry point most users need.
+That's it. The launcher is the only entry point most users need.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for cross-platform details
 (Windows PowerShell, Docker, headless servers), [docs/CONFIG.md](docs/CONFIG.md)

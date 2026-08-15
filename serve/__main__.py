@@ -134,33 +134,30 @@ examples:
     args = ap.parse_args(argv)
 
     model = Path(args.model).expanduser()
-    if not model.exists():
-        print(f"no such model path: {model}", file=sys.stderr)
-        return 2
-
     model_id = args.model_id or model.name
 
-    engine_loaded = False
     engine = None
-    try:
-        engine = Engine(
-            str(model),
-            preset=args.preset,
-            trunk_dir=args.trunk_dir,
-            config_path=args.config,
-            tok_dir=args.tok_dir,
-            layers=args.layers,
-            cache_gb=args.cache_gb,
-            trunk_gb=args.trunk_gb,
-            incremental=not args.no_incremental,
-        )
-        engine_loaded = True
-    except EngineError as e:
-        print(f"engine open failed: {e}", file=sys.stderr)
-        print("the HTTP scaffold will still come up; /v1/models works,", file=sys.stderr)
-        print("but /v1/chat/completions will return engine_error until you", file=sys.stderr)
-        print("download weights via:", file=sys.stderr)
-        print(f"  bash $K3_DIR/scripts/setup-and-serve.sh --download-only  (K3_DIR default: ~/.kimi-k3-lean)", file=sys.stderr)
+    if model.exists():
+        try:
+            engine = Engine(
+                str(model),
+                preset=args.preset,
+                trunk_dir=args.trunk_dir,
+                config_path=args.config,
+                tok_dir=args.tok_dir,
+                layers=args.layers,
+                cache_gb=args.cache_gb,
+                trunk_gb=args.trunk_gb,
+                incremental=not args.no_incremental,
+            )
+        except EngineError as e:
+            print(f"engine open failed: {e}", file=sys.stderr)
+            print("the HTTP scaffold will still come up; /v1/models works,", file=sys.stderr)
+            print("but /v1/chat/completions will return engine_error until", file=sys.stderr)
+            print("weights are on disk. Run: kimi-k3-lean fetch", file=sys.stderr)
+    else:
+        print(f"no model at {model} — starting scaffold (engine_error on chat)", file=sys.stderr)
+        print("download weights with: kimi-k3-lean fetch", file=sys.stderr)
 
     # Wrap engine (or its absence) in a uniform interface for the http
     # layer. When the real engine loaded, use it directly. When it didn't,

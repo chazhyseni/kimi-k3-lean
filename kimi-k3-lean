@@ -1,254 +1,118 @@
 #!/usr/bin/env bash
-# kimi-k3-lean — CLI launcher for running a Kimi K3 OpenAI server.
+# kimi-k3-lean — CLI launcher.
 #
-# This script is downloaded into ~/.local/bin by the installer and is
-# the only entry point most users need. It wraps the repo's serve/
-# entry-point script with sensible defaults so users don't have to
-# figure out PATH, PYTHONPATH, or which library file to point at.
-#
-# Usage:
-#   kimi-k3-lean serve --model /path/to/k3 [--port 8080] [--api-key ...]
-#   kimi-k3-lean status
-#   kimi-k3-lean stop
-#   kimi-k3-lean models / list
-#   kimi-k3-lean chat --model kimi-k3 --message "hello"
-#   kimi-k3-lean install   # no-op if already installed; prints help
-#   kimi-k3-lean doctor    # prints what's installed, what's missing
-#   kimi-k3-lean uninstall # stops server, removes the launcher itself
-#
-# Env (set once, persist via kimi-k3-lean config):
-#   K3_HOME         repo checkout (~/.kimi-k3-lean)
-#   K3_MODEL        default model dir (overridable per command)
-#   K3_PORT         default 8080
-#   K3_HOST         default 127.0.0.1
-#   K3_API_KEY      bearer token; one auto-generated and stored if missing
-#   K3_MODEL_NAME   advertised id (default kimi-k3)
+#   kimi-k3-lean start              start the OpenAI server
+#   kimi-k3-lean stop               stop it
+#   kimi-k3-lean status             show running PID + URL
+#   kimi-k3-lean chat -m "hello"    one-shot chat (alias: ask)
+#   kimi-k3-lean models             curl /v1/models
+#   kimi-k3-lean fetch              download K3 weights (~982 GB, resumable)
+#   kimi-k3-lean doctor             print install state
+#   kimi-k3-lean stack up [--webui]  LAN stack (Caddy + gateway + Open WebUI)
+#   kimi-k3-lean stack down
+#   kimi-k3-lean uninstall          stop server, remove launcher
+#   kimi-k3-lean help
 
 set -euo pipefail
 
-# Cross-platform Python detection (python3 on POSIX, python on Windows).
-if command -v python3 >/dev/null 2>&1; then
-    K3_PY=python3
-elif command -v python >/dev/null 2>&1; then
-    K3_PY=python
-else
-    echo "kimi-k3-lean: python3 / python not found; install Python 3.11+" >&2
-    exit 1
-fi
+# --- find python ---
+if command -v python3 >/dev/null 2>&1; then K3_PY=python3
+elif command -v python >/dev/null 2>&1; then K3_PY=python
+else echo "python not found" >&2; exit 1; fi
 
-# Cross-platform formatting helpers. Match bootstrap.sh so the user sees
-# the same colors / prefixes in either output.
-ok()   { printf "\033[1;32m  ✓\033[0m %s\n" "$*" >&2; }
-warn() { printf "\033[1;33m  !\033[0m %s\n" "$*" >&2; }
-say()  { printf "\033[1;36m==>\033[0m %s\n" "$*" >&2; }
-need() { printf "\033[1;31m  ✗\033[0m %s\n" "$*" >&2; exit 1; }
+ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m  !\033[0m %s\n' "$*" >&2; }
+say()  { printf '\033[1;36m==>\033[0m %s\n' "$*" >&2; }
 
-# ----- finding the repo -----
+# --- find repo ---
 _k3_find_repo() {
-    # 1. explicit K3_HOME wins
-    if [ -n "${K3_HOME:-}" ] && [ -f "$K3_HOME/serve/__main__.py" ]; then
-        echo "$K3_HOME"
-        return 0
-    fi
-    # 2. **user install with conf**: if the home install dir exists and has
-    # a conf file, always prefer it -- this is where the running server's
-    # state lives. Without this check, a dev checkout elsewhere (./kimi-k3-lean
-    # from a freshly cloned repo) would resolve to the wrong dir and
-    # # "no token; run kimi-k3-lean config set api_key" would be returned
-    # even though server.env has the token under ~/.kimi-k3-lean/.
-    if [ -n "${HOME:-}" ] && [ -f "$HOME/.kimi-k3-lean/serve/__main__.py" ]        && [ -f "$HOME/.kimi-k3-lean/server.env" ]; then
-        echo "$HOME/.kimi-k3-lean"
-        return 0
-    fi
-    # 3. THIS script sits in the repo root (dev install: ./kimi-k3-lean serve)
+    [ -n "${K3_HOME:-}" ] && [ -f "$K3_HOME/serve/__main__.py" ] && { echo "$K3_HOME"; return 0; }
+    [ -f "$HOME/.kimi-k3-lean/serve/__main__.py" ] && { echo "$HOME/.kimi-k3-lean"; return 0; }
     local me="${BASH_SOURCE[0]}"
     while [ -L "$me" ]; do me=$(readlink "$me"); done
-    local script_dir
-    script_dir=$(cd "$(dirname "$me")" && pwd)
-    if [ -f "$script_dir/serve/__main__.py" ]; then
-        echo "$script_dir"
-        return 0
-    fi
-    # 4. the launcher next to the clone at ~/.kimi-k3-lean/kimi-k3-lean
-    if [ -f "$HOME/.kimi-k3-lean/serve/__main__.py" ]; then
-        echo "$HOME/.kimi-k3-lean"
-        return 0
-    fi
-    # 5. install layout where the launcher lives at <prefix>/bin/kimi-k3-lean
-    #    and the clone sits at <prefix>/repo
-    local prefix
-    prefix=$(dirname "$(dirname "$me")")
-    if [ -f "$prefix/repo/serve/__main__.py" ]; then
-        echo "$prefix/repo"
-        return 0
-    fi
-    # 6. XDG-style fallback
-    if [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean/serve/__main__.py" ]; then
-        echo "${XDG_DATA_HOME:-$HOME/.local/share}/kimi-k3-lean"
-        return 0
-    fi
+    local d; d=$(cd "$(dirname "$me")" && pwd)
+    [ -f "$d/serve/__main__.py" ] && { echo "$d"; return 0; }
     return 1
 }
 
-if ! K3_HOME_RESOLVED=$(_k3_find_repo); then
-    cat >&2 <<'EOF'
-kimi-k3-lean: no repo found.
-
-This launcher expects the kimi-k3-lean repo at one of:
-  $K3_HOME                 (env var)
-  <script dir>/../repo
-  ~/.kimi-k3-lean
-  $XDG_DATA_HOME/kimi-k3-lean
-
-Install with:
-  curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/install.sh | bash
-EOF
+K3_HOME=$(_k3_find_repo 2>/dev/null || echo "")
+if [ -z "$K3_HOME" ]; then
+    echo "kimi-k3-lean: repo not found. Install with:" >&2
+    echo "  curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash" >&2
     exit 1
 fi
-export K3_HOME="$K3_HOME_RESOLVED"
+export K3_HOME
 
-K3_CONF="$K3_HOME/server.env"
-# precedence: shell env > conf file > built-in defaults
-# Load the file only for vars the user did NOT set on the command line.
-[ -f "$K3_CONF" ] || true  # exists check is harmless
-__env_set() { [ -n "${!1:-}" ]; }
-__load_if_unset() {
-    # NOTE: do NOT use `set -e` semantics in here. `[ -n "" ]` returns 1,
-    # which would abort the script. Use guard-style tests instead.
-    local var="$1" def="$2"
-    local cur="${!var:-}"
-    local from_file=""
+# --- load config ---
+K3_CONF="${K3_CONF:-$K3_HOME/server.env}"
+_k3_load() {
+    local var="$1" def="$2" cur="${!1:-}" val=""
     if [ -z "$cur" ] && [ -f "$K3_CONF" ]; then
-        from_file=$(grep -E "^${var}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2- || true)
+        val=$(grep -E "^${var}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2- || true)
     fi
-    if [ -n "$from_file" ]; then
-        printf -v "$var" '%s' "$from_file"
-        export "$var"
-    elif [ -z "$cur" ]; then
-        printf -v "$var" '%s' "$def"
-        export "$var"
-    fi
+    : "${!var:=${val:-$def}}"
+    export "$var"
 }
-__load_if_unset K3_PORT 8080
-__load_if_unset K3_HOST 127.0.0.1
-__load_if_unset K3_API_KEY ""
-__load_if_unset K3_MODEL_DIR ""
-__load_if_unset K3_MODEL_NAME kimi-k3
-# K3_MODEL is just an alias for K3_MODEL_DIR; if neither is set, neither
-# can we serve anything.
+_k3_load K3_PORT 8080
+_k3_load K3_HOST 127.0.0.1
+_k3_load K3_API_KEY ""
+_k3_load K3_MODEL_DIR "$K3_HOME/checkpoints/k3"
+_k3_load K3_MODEL_NAME kimi-k3
 : "${K3_MODEL:=$K3_MODEL_DIR}"
 
-# ----- subcommands -----
-cmd="${1:-help}"
-shift 2>/dev/null || true
+# --- subcommands ---
+cmd="${1:-help}"; shift 2>/dev/null || true
 
 _k3_status() {
     local pid=""
-    if [ -f "$K3_HOME/server.pid" ]; then
-        pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || true)
-    fi
+    [ -f "$K3_HOME/server.pid" ] && pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || echo "")
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        echo "kimi-k3-lean running: PID $pid  http://$K3_HOST:$K3_PORT  $K3_HOME/server.log"
+        echo "running: PID $pid  http://$K3_HOST:$K3_PORT"
         return 0
     fi
-
-    # PID file is missing or stale. Try to find what is actually listening
-    # on the configured port. lsof / fuser / pgrep all have portability
-    # quirks so we chain them and stop at the first match.
-    local discovered=""
+    # try to discover by port
+    local found=""
     if command -v lsof >/dev/null 2>&1; then
-        discovered=$(lsof -ti tcp:"$K3_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+        found=$(lsof -ti tcp:"$K3_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+    elif command -v ss >/dev/null 2>&1; then
+        found=$(ss -ltnp 2>/dev/null | grep ":$K3_PORT " | grep -oP 'pid=\K[0-9]+' | head -1)
     fi
-    if [ -z "$discovered" ] && command -v fuser >/dev/null 2>&1; then
-        discovered=$(fuser "$K3_PORT/tcp" 2>/dev/null | awk "{print \$1}" | head -1)
-    fi
-    if [ -z "$discovered" ] && command -v ss >/dev/null 2>&1; then
-        discovered=$(ss -ltnp 2>/dev/null | awk -v p=":$K3_PORT" "\$4 ~ p {match(\$0, /pid=([0-9]+)/, a); print a[1]; exit}")
-    fi
-    if [ -n "$discovered" ] && kill -0 "$discovered" 2>/dev/null; then
-        # Adopt: rewrite the PID file so future invocations find it directly.
-        [ -n "$K3_HOME" ] && [ "$K3_HOME" != "/" ] && echo "$discovered" > "$K3_HOME/server.pid" 2>/dev/null || true
-        echo "kimi-k3-lean running (discovered, no PID file): PID $discovered  http://$K3_HOST:$K3_PORT  $K3_HOME/server.log"
+    if [ -n "$found" ] && kill -0 "$found" 2>/dev/null; then
+        echo "$found" > "$K3_HOME/server.pid" 2>/dev/null || true
+        echo "running (discovered): PID $found  http://$K3_HOST:$K3_PORT"
         return 0
     fi
-
-    echo "kimi-k3-lean: no server running on http://$K3_HOST:$K3_PORT"
+    echo "no server running on http://$K3_HOST:$K3_PORT"
     return 1
 }
 
 _k3_stop() {
     if [ -f "$K3_HOME/server.pid" ]; then
-        local pid
-        pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || echo "")
+        local pid; pid=$(cat "$K3_HOME/server.pid" 2>/dev/null || echo "")
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            echo "killing PID $pid"
             kill "$pid" 2>/dev/null || true
-            for i in 1 2 3 4 5; do
-                kill -0 "$pid" 2>/dev/null || break
-                sleep 0.2
-            done
+            for i in 1 2 3 4 5; do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
         fi
         rm -f "$K3_HOME/server.pid"
     fi
-    # Also free the port if anything else is bound. Cross-platform:
-    #   Linux: ss -ltnp + kill (or lsof)
-    #   macOS: lsof -ti tcp:PORT | xargs kill
-    #   Windows (git-bash): netstat -ano + taskkill
-    _k3_kill_port() {
-        local port="$1"
-        if command -v ss >/dev/null 2>&1; then
-            # Linux + modern macOS
-            local pids
-            pids=$(ss -ltnp "sport = :$port" 2>/dev/null \
-                | grep -oP 'pid=\K[0-9]+' | sort -u || true)
-            [ -n "$pids" ] && kill $pids 2>/dev/null || true
-        elif command -v lsof >/dev/null 2>&1; then
-            # macOS / BSDs
-            local pids
-            pids=$(lsof -ti "tcp:$port" 2>/dev/null || true)
-            [ -n "$pids" ] && kill $pids 2>/dev/null || true
-        elif command -v fuser >/dev/null 2>&1; then
-            # Older Linux distros
-            fuser -k "${port}/tcp" 2>/dev/null || true
-        elif command -v netstat >/dev/null 2>&1 && command -v taskkill >/dev/null 2>&1; then
-            # Windows (git-bash has netstat via /c/Windows; taskkill for the kill)
-            local pid
-            pid=$(netstat -ano 2>/dev/null | grep ":$port " | awk '{print $NF}' | head -1)
-            [ -n "$pid" ] && taskkill //F //PID "$pid" 2>/dev/null || true
-        fi
-    }
-    _k3_kill_port "$K3_PORT"
-    echo "stopped."
+    # free port
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k "${K3_PORT}/tcp" 2>/dev/null || true
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -ti tcp:"$K3_PORT" 2>/dev/null | xargs kill 2>/dev/null || true
+    fi
+    echo "stopped"
 }
 
 _k3_serve() {
-    if [ ! -d "$K3_MODEL" ]; then
-        cat >&2 <<EOF
-No model directory found at: $K3_MODEL
-
-To download the real Kimi K3 weights (~982 GB, ~4 hours):
-  kimi-k3-lean fetch
-or
-  $K3_HOME/scripts/setup-and-serve.sh --download-only
-
-Until then the server will start, return 200 on /v1/models, and
-return a documented engine_error envelope from /v1/chat/completions.
-That lets you test the HTTP scaffold end-to-end immediately.
-EOF
-        mkdir -p "$K3_MODEL"
-    fi
     _k3_stop  # idempotent
-    # Cross-platform random hex: /dev/urandom on POSIX, CryptoAPI on
-    # Windows. Fall back to time-based if neither available.
-    if [ -r /dev/urandom ]; then
-        : "${K3_API_KEY:=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
-    elif command -v openssl >/dev/null 2>&1; then
-        : "${K3_API_KEY:=$(openssl rand -hex 16 2>/dev/null || echo "k3-$$")}"
-    else
-        : "${K3_API_KEY:=k3-$(date +%s)-$$}"
+    [ -d "$K3_MODEL" ] || mkdir -p "$K3_MODEL"
+    # generate token if none
+    if [ -z "$K3_API_KEY" ]; then
+        K3_API_KEY=$(head -c16 /dev/urandom 2>/dev/null | od -An -tx1 | tr -d ' \n' || openssl rand -hex 16 2>/dev/null || echo "k3-$$")
+        export K3_API_KEY
     fi
-
-    # write the env so future shells / uninstall know the token
+    # write env
     cat > "$K3_CONF" <<EOF
 K3_HOME=$K3_HOME
 K3_HOST=$K3_HOST
@@ -260,418 +124,154 @@ EOF
     chmod 600 "$K3_CONF"
 
     cd "$K3_HOME"
-    # Ensure libk3.so is on LD_LIBRARY_PATH even if the user moved the launcher.
-    # On Windows this is a no-op (libk3.dll is loaded via PATH on Windows).
-    case "$(uname -s 2>/dev/null)" in
-        MINGW*|MSYS*|CYGWIN*) : ;;  # Windows: rely on PATH for .dll discovery
-        *) export LD_LIBRARY_PATH="$K3_HOME/bin:${LD_LIBRARY_PATH:-}" ;;
-    esac
+    export LD_LIBRARY_PATH="$K3_HOME/bin:${LD_LIBRARY_PATH:-}"
     "$K3_PY" -u serve/__main__.py "$K3_MODEL" \
         --host "$K3_HOST" --port "$K3_PORT" \
         --api-key "$K3_API_KEY" --model-id "$K3_MODEL_NAME" \
-        "$@" \
-        >>"$K3_HOME/server.log" 2>&1 </dev/null &
+        "$@" >>"$K3_HOME/server.log" 2>&1 </dev/null &
     local pid=$!
     echo "$pid" > "$K3_HOME/server.pid"
     echo "started: PID $pid  http://$K3_HOST:$K3_PORT"
     echo "log:     $K3_HOME/server.log"
-    echo "token:   $K3_API_KEY  (in $K3_CONF, mode 0600)"
-    # wait for /v1/models to return 200 (or 30s)
-    local ready=0
+    # wait for ready
     for i in $(seq 1 30); do
         local code
         code=$(curl -sS --max-time 1 -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer $K3_API_KEY" \
             "http://$K3_HOST:$K3_PORT/v1/models" 2>/dev/null || echo 000)
-        if [ "$code" = "200" ]; then ready=1; break; fi
+        [ "$code" = "200" ] && { echo "ready"; return 0; }
         sleep 1
     done
-    if [ "$ready" = "1" ]; then
-        echo "ready."
-    else
-        echo "not ready after 30s; check $K3_HOME/server.log"
-        return 1
-    fi
-}
-
-_k3_models() {
-    if ! _k3_status >/dev/null 2>&1; then
-        echo "no server running. start with: kimi-k3-lean serve"
-        return 1
-    fi
-    : "${K3_API_KEY:?no token; run 'kimi-k3-lean config set api_key ...' first}"
-    curl -sS -H "Authorization: Bearer $K3_API_KEY" "http://$K3_HOST:$K3_PORT/v1/models"
+    echo "not ready after 30s; check $K3_HOME/server.log"
+    return 1
 }
 
 _k3_chat() {
-    if ! _k3_status >/dev/null 2>&1; then
-        echo "no server running. start with: kimi-k3-lean serve &"
-        return 1
-    fi
-    local model="" message="" stream=0
+    _k3_status >/dev/null 2>&1 || { echo "no server running"; return 1; }
+    local model="$K3_MODEL_NAME" message="" stream=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --model)  model="$2"; shift 2 ;;
-            --message|-m) message="$2"; shift 2 ;;
+            -m|--message) message="$2"; shift 2 ;;
             --stream) stream=1; shift ;;
             *) message="$1"; shift ;;
         esac
     done
-    : "${model:=$K3_MODEL_NAME}"
-    : "${message:?no --message given}"
-    : "${K3_API_KEY:?no token}"
+    : "${message:?no message given (-m \"...\")}"
+    : "${K3_API_KEY:?no token in $K3_CONF}"
     local payload
     payload=$("$K3_PY" -c "
 import json,sys
-print(json.dumps({'model':sys.argv[1],'messages':[{'role':'user','content':sys.argv[2]}],'max_tokens':256,'stream': bool(int(sys.argv[3]))}))
+print(json.dumps({'model':sys.argv[1],'messages':[{'role':'user','content':sys.argv[2]}],'max_tokens':256,'stream':bool(int(sys.argv[3]))}))
 " "$model" "$message" "$stream")
     if [ "$stream" = "1" ]; then
         curl -sSN -X POST -H "Content-Type: application/json" \
             -H "Authorization: Bearer $K3_API_KEY" \
-            "http://$K3_HOST:$K3_PORT/v1/chat/completions" \
-            -d "$payload"
+            "http://$K3_HOST:$K3_PORT/v1/chat/completions" -d "$payload"
     else
         curl -sS -X POST -H "Content-Type: application/json" \
             -H "Authorization: Bearer $K3_API_KEY" \
-            "http://$K3_HOST:$K3_PORT/v1/chat/completions" \
-            -d "$payload"
+            "http://$K3_HOST:$K3_PORT/v1/chat/completions" -d "$payload"
     fi
 }
 
+_k3_models() {
+    _k3_status >/dev/null 2>&1 || { echo "no server running"; return 1; }
+    curl -sS -H "Authorization: Bearer $K3_API_KEY" "http://$K3_HOST:$K3_PORT/v1/models"
+}
+
 _k3_fetch() {
-    # Use download-model.sh directly. setup-and-serve.sh is a heavier
-    # wrapper that does more than the user wants here.
     local model_dir="${K3_MODEL:-$K3_HOME/checkpoints/k3}"
-    if [ "${1:-}" = "--status" ]; then
-        if [ -f "$K3_HOME/download.pid" ]; then
-            local pid; pid=$(cat "$K3_HOME/download.pid" 2>/dev/null || echo)
-            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                echo "download running, pid=$pid"
-                echo "log: $K3_HOME/download.log"
-                tail -3 "$K3_HOME/download.log" 2>/dev/null || true
-                return 0
-            fi
-        fi
-        echo "no download in progress"
-        if [ -d "$model_dir" ] && [ -n "$(ls -A "$model_dir" 2>/dev/null)" ]; then
-            echo "model already at $model_dir"
-        fi
-        return 0
-    fi
-    export K3_DIR="$K3_HOME"
-    export K3_MODEL_DIR="$model_dir"
+    export K3_DIR="$K3_HOME" K3_MODEL_DIR="$model_dir"
     exec "$K3_HOME/scripts/download-model.sh" "$model_dir"
 }
 
 _k3_doctor() {
     echo "== kimi-k3-lean doctor =="
     echo "repo:       $K3_HOME"
-    # file(1) doesn't exist on Windows; fall back to byte-count + magic check.
-    if [ -f "$K3_HOME/bin/libk3.so" ] || [ -f "$K3_HOME/bin/libk3.dylib" ] || [ -f "$K3_HOME/bin/libk3.dll" ]; then
-        local lib
-        for lib in libk3.so libk3.dylib libk3.dll; do
-            if [ -f "$K3_HOME/bin/$lib" ]; then
-                echo "engine:     $K3_HOME/bin/$lib ($(wc -c < "$K3_HOME/bin/$lib" 2>/dev/null) bytes)"
-                break
-            fi
-        done
-    else
-        echo "engine:     MISSING (build via make or bootstrap.sh)"
-    fi
-    echo "model dir:  ${K3_MODEL:-NOT SET}"
-    if [ -n "$K3_MODEL" ] && [ -d "$K3_MODEL" ]; then
-        echo "  contains: $(ls "$K3_MODEL" | head -3 | tr '\n' ' ')"
-        echo "            $(ls "$K3_MODEL" | wc -l) files total"
+    for lib in libk3.so libk3.dylib libk3.dll; do
+        if [ -f "$K3_HOME/bin/$lib" ]; then
+            echo "engine:     bin/$lib ($(wc -c < "$K3_HOME/bin/$lib" 2>/dev/null) bytes)"
+            break
+        fi
+    done
+    echo "model dir:  $K3_MODEL"
+    if [ -d "$K3_MODEL" ]; then
+        echo "  files:    $(find "$K3_MODEL" -name '*.safetensors' 2>/dev/null | wc -l) safetensors"
     fi
     echo "port:       $K3_PORT"
-    echo "host:       $K3_HOST"
-    echo "token set:  $([ -n "${K3_API_KEY:-}" ] && echo yes || echo NO)"
+    echo "token set:  $([ -n "$K3_API_KEY" ] && echo yes || echo NO)"
     _k3_status || true
-    echo "python:     $(python3 --version 2>&1)"
-    echo "hermes:     $(command -v hermes || echo NOT INSTALLED)"
-    if command -v hermes >/dev/null; then
-        echo "  providers.ollama-launch.models includes '$K3_MODEL_NAME': $(hermes config get providers.ollama-launch.models 2>/dev/null | grep -c -- "$K3_MODEL_NAME") times"
-    fi
+    echo "python:     $($K3_PY --version 2>&1)"
 }
 
-_k3_config() {
-    # very small wrapper: kimi-k3-lean config [get NAME | set NAME VALUE | unset NAME]
-    local op="${1:-show}"; shift 2>/dev/null || true
-    case "$op" in
-        show)   echo "K3_HOME=$K3_HOME"; cat "$K3_CONF" 2>/dev/null || true ;;
-        get)    grep -E "^${1}=" "$K3_CONF" 2>/dev/null | head -1 | cut -d= -f2- ;;
-        set)    local k="$1" v="$2"
-                grep -v "^${k}=" "$K3_CONF" 2>/dev/null > "$K3_CONF.tmp" || true
-                echo "${k}=${v}" >> "$K3_CONF.tmp"
-                mv "$K3_CONF.tmp" "$K3_CONF"
-                chmod 600 "$K3_CONF" ;;
-        unset)  sed -i.bak "/^${1}=/d" "$K3_CONF" 2>/dev/null || true ; rm -f "$K3_CONF.bak" ;;
+_k3_stack() {
+    local sub="${1:-status}"; shift 2>/dev/null || true
+    local d="$K3_HOME/deploy"
+    [ -d "$d" ] || { echo "no deploy/ at $d"; return 1; }
+    command -v docker >/dev/null 2>&1 || { echo "docker not installed"; return 1; }
+    local compose=(docker compose -f "$d/compose.yml")
+    case "$sub" in
+        up)
+            local profiles=()
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --webui) profiles+=(--profile with-webui); shift ;;
+                    --k3)    profiles+=(--profile with-k3); shift ;;
+                    *)       shift ;;
+                esac
+            done
+            [ -f "$d/.env" ] || cp "$d/.env.example" "$d/.env" 2>/dev/null || true
+            "${compose[@]}" "${profiles[@]}" up -d --build
+            echo "stack up. status: kimi-k3-lean stack status"
+            ;;
+        down)   "${compose[@]}" down "$@" ;;
+        status)  "${compose[@]}" ps ;;
+        logs)    "${compose[@]}" logs -f "$@" ;;
+        *)       echo "usage: stack <up [--webui] [--k3] | down | status | logs>"; return 2 ;;
     esac
 }
 
 _k3_uninstall() {
     _k3_stop
-    cat >&2 <<EOF
-This uninstalls ONLY the launcher and the server+token. The repo at
-$K3_HOME and any downloaded model weights are kept (delete with rm -rf).
-EOF
-    rm -f "$K3_BIN"  # symlink this script lives at
-    if command -v hermes >/dev/null; then
+    rm -f "$HOME/.local/bin/kimi-k3-lean"
+    if command -v hermes >/dev/null 2>&1; then
         hermes config unset model.base_url model.api_key model.default 2>/dev/null || true
-        hermes config set providers.ollama-launch.models "$(hermes config get providers.ollama-launch.models 2>/dev/null | grep -v -- "$K3_MODEL_NAME" | "$K3_PY" -c 'import re,sys; print(repr([l.strip()[2:] for l in sys.stdin if l.strip().startswith("- ")])))')" 2>/dev/null || true
     fi
-    echo "uninstalled. to fully remove the repo:  rm -rf $K3_HOME"
-}
-
-_k3_stack() {
-    # subcommand: stack <up|down|status|logs> [FLAGS]
-    local sub="${1:-status}"; shift 2>/dev/null || true
-    local repo="$K3_HOME"
-    local deploy_dir="$repo/deploy"
-    if [ ! -d "$deploy_dir" ]; then
-        echo "no deploy/ directory at $deploy_dir"
-        return 1
-    fi
-    # Refuse to run stack with a stale launcher. The user has hit this
-    # multiple times: the installed copy of kimi-k3-lean in
-    # ~/.local/bin is older than origin/main, so it prints misleading
-    # "plugin missing" messages even when compose is fine. Detect by
-    # comparing the local repo HEAD against origin/main and, if they
-    # differ, auto-update (we're already inside a `stack` call, not
-    # modifying state the server depends on). Skips update if no .git,
-    # if it fails, or if origin isn't reachable -- those just print a
-    # warning and let the user retry.
-    if [ -d "$repo/.git" ] && command -v git >/dev/null 2>&1; then
-        local local_head origin_head
-        local_head=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo unknown)
-        origin_head=$(git -C "$repo" rev-parse --short origin/main 2>/dev/null || echo unknown)
-        if [ "$local_head" = "$origin_head" ]; then
-            : # already current
-        else
-            echo "this repo is at $local_head, origin/main is at $origin_head"
-            echo "updating so the launcher stops reporting misleading errors..."
-            if git -C "$repo" fetch --depth 1 origin main >/dev/null 2>&1; then
-                if git -C "$repo" reset --hard origin/main >/dev/null 2>&1; then
-                    echo "now at HEAD $(git -C "$repo" rev-parse --short HEAD)"
-                    # Refresh the installed launcher copy
-                    if [ -f "$repo/kimi-k3-lean" ] && [ "${BASH_SOURCE[0]}" != "$repo/kimi-k3-lean" ]; then
-                        if cp "$repo/kimi-k3-lean" "$HOME/.local/bin/kimi-k3-lean" 2>/dev/null; then
-                            chmod +x "$HOME/.local/bin/kimi-k3-lean"
-                            echo "launcher refreshed"
-                        fi
-                    fi
-                fi
-            fi
-        fi
-    fi
-    if ! command -v docker >/dev/null 2>&1; then
-        echo "docker not installed; install Docker Desktop or Docker Engine first"
-        return 1
-    fi
-    # The compose plugin is shipped with Docker Desktop on macOS and with
-    # docker-compose-plugin on Linux. We probe by trying to parse
-    # deploy/compose.yml itself; if the plugin is missing, this prints
-    # "unknown command: compose" or "compose: command not found" with a
-    # non-zero exit.
-    if ! docker compose config --quiet -f "$deploy_dir/compose.yml" >/dev/null 2>&1; then
-        # Fall back to the global probe (some shell setups have compose
-        # aliased or wrapped).
-        if ! docker compose version >/dev/null 2>&1; then
-            echo "docker compose plugin missing. On macOS: install Docker Desktop."
-            echo "On Linux: apt install docker-compose-plugin (https://docs.docker.com/compose/install/)"
-            return 1
-        fi
-    fi
-    # Auto-handle docker client/daemon version mismatch.
-    # `docker compose up` against a daemon that's older than the client
-    # fails with "client version X is too new. Maximum supported API
-    # version is Y" -- a real user complaint. We parse `docker version`
-    # text output, then set DOCKER_API_VERSION to the older of the two
-    # when they disagree.
-    if command -v docker >/dev/null 2>&1; then
-        # Detect docker compose plugin / daemon version mismatch.
-        # `docker compose` can fail with "client version X is too new.
-        # Maximum supported API version is Y" because docker-compose-plugin
-        # 5.x vendors its own API client (1.53) that's newer than the
-        # daemon. `docker version` does NOT surface this — both Client
-        # and Server sections report the docker CLI's own version. So we
-        # probe with `docker compose ps` and parse the error.
-        probe_output=$(DOCKER_API_VERSION= docker compose ps 2>&1 || true)
-        # Match the daemon rejection. Use plain if/grep instead of bash
-        # pattern-match so we don't have to escape multi-globs.
-        if printf '%s' "$probe_output" | grep -q "Maximum supported API version"; then
-            # The daemon reports its max API version. Pin to that.
-            max_api=$(printf '%s' "$probe_output" | grep -oE "API version is [0-9]+\.[0-9]+" | grep -oE "[0-9]+\.[0-9]+" | head -1)
-            cur_client=$(printf '%s' "$probe_output" | grep -oE "client version [0-9]+\.[0-9]+" | grep -oE "[0-9]+\.[0-9]+" | head -1)
-            if [ -n "$max_api" ]; then
-                export DOCKER_API_VERSION="$max_api"
-                echo "docker compose plugin ($cur_client) newer than daemon (max $max_api); pinning DOCKER_API_VERSION=$max_api"
-            fi
-        fi
-    fi
-    local compose=(docker compose -f "$deploy_dir/compose.yml")
-    case "$sub" in
-        up)
-            local profiles=()
-            local clean=0
-            local rebuild_only=0
-            # parse flags: --webui, --k3, --clean (nuke + recreate), --rebuild
-            while [ $# -gt 0 ]; do
-                case "$1" in
-                    --webui)   profiles+=(--profile with-webui); shift ;;
-                    --k3)      profiles+=(--profile with-k3); shift ;;
-                    --lan)     profiles+=(--profile lan); shift ;;
-                    --clean)   clean=1; shift ;;
-                    --rebuild) rebuild_only=1; shift ;;
-                    --no-build) profiles+=(--no-build); shift ;;
-                    *) echo "unknown flag: $1"; return 2 ;;
-                esac
-            done
-            # create .env from example if missing
-            if [ ! -f "$deploy_dir/.env" ] && [ -f "$deploy_dir/.env.example" ]; then
-                cp "$deploy_dir/.env.example" "$deploy_dir/.env"
-                echo "created $deploy_dir/.env from example (edit before production!)"
-            fi
-            # --clean: tear down the prior stack state (containers + orphan
-            # networks + dangling images) before bringing it back up. Use
-            # this when 'docker compose up' keeps failing with stale
-            # container names, partial volumes, or the same image-pull error.
-            if [ "$clean" = "1" ]; then
-                echo "--clean: tearing down prior stack state"
-                "${compose[@]}" "${profiles[@]}" down --remove-orphans 2>/dev/null || true
-                docker rm -f $(docker ps -aq --filter "label=com.docker.compose.project=kimi-k3-lean") 2>/dev/null || true
-                docker network prune -f --filter "label=com.docker.compose.project=kimi-k3-lean" 2>/dev/null || true
-            fi
-            # --rebuild only: pull + rebuild images, then stop. Useful when
-            # the user wants to verify a fresh image build resolves a bug
-            # without a full up.
-            if [ "$rebuild_only" = "1" ]; then
-                echo "--rebuild: rebuilding images"
-                "${compose[@]}" "${profiles[@]}" build "$@"
-                return 0
-            fi
-            "${compose[@]}" "${profiles[@]}" up -d --build "$@"
-            echo ""
-            echo "stack up. Try:"
-            echo "  kimi-k3-lean stack status"
-            echo "  curl http://localhost/v1/models -H \"Authorization: Bearer *** ^INTERNAL_API_KEY= $deploy_dir/.env | cut -d= -f2)\""
-            echo "  open http://localhost/  (only with --webui)"
-            if [ "$clean" = "0" ]; then
-                echo ""
-                echo "If the stack fails with 'client version X too new' or stale image tags,"
-                echo "rerun with --clean:  kimi-k3-lean stack up --webui --clean"
-            fi
-            ;;
-        down)  "${compose[@]}" down "$@" ;;
-        status) "${compose[@]}" ps ;;
-        logs)  "${compose[@]}" logs -f "$@" ;;
-        *) echo "unknown stack sub: $sub (try up/down/status/logs)"; return 2 ;;
-    esac
-}
-
-_k3_update() {
-    # Pull HEAD from origin and refresh the launcher script in ~/.local/bin.
-    # Refuses if a server is running in this K3_DIR (would lose the
-    # in-flight changes when bootstrap re-resets --hard).
-    local our_repo repo_root bin_target
-    our_repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-    repo_root=$(_k3_find_repo 2>/dev/null || echo "$our_repo")
-    bin_target="${BASH_SOURCE[0]}"
-    if [ ! -d "$repo_root/.git" ]; then
-        echo 1>&2 "warn: no .git at $repo_root; can't update in place. Re-run bootstrap."
-        return 1
-    fi
-    # Refuse if our server is running (its PID file would be overwritten)
-    if [ -f "$repo_root/server.pid" ]; then
-        local spid
-        spid=$(cat "$repo_root/server.pid" 2>/dev/null || echo "")
-        if [ -n "$spid" ] && kill -0 "$spid" 2>/dev/null; then
-            echo 1>&2 "warn: server PID $spid still running. Stop it first: kimi-k3-lean stop"
-            return 1
-        fi
-    fi
-    echo "pulling HEAD from origin"
-    if ! git -C "$repo_root" fetch --depth 1 origin main 2>&1 | sed "s/^/    /"; then
-        echo 1>&2 "warn: git fetch failed; check network"
-        return 1
-    fi
-    if ! git -C "$repo_root" reset --hard origin/main 2>&1 | sed "s/^/    /"; then
-        echo 1>&2 "warn: git reset failed; working tree may be dirty. Try: cd $repo_root && git status"
-        return 1
-    fi
-    local new_head
-    new_head=$(git -C "$repo_root" rev-parse --short HEAD)
-    echo "now at HEAD $new_head"
-    # Refresh the launcher installed in ~/.local/bin
-    if [ "$bin_target" != "$HOME/.local/bin/kimi-k3-lean" ]; then
-        if cp "$repo_root/kimi-k3-lean" "$HOME/.local/bin/kimi-k3-lean" 2>/dev/null; then
-            chmod +x "$HOME/.local/bin/kimi-k3-lean"
-            echo "launcher refreshed: $HOME/.local/bin/kimi-k3-lean"
-        fi
-    fi
-}
-
-_k3_install() {
-    # If this launcher is in ~/.local/bin, the install is complete.
-    # Otherwise it was run from the repo; tell the user how to install.
-    local bin_path="${BASH_SOURCE[0]}"
-    if [ "$bin_path" = "$HOME/.local/bin/kimi-k3-lean" ] || [ "$bin_path" = "$HOME/.local/bin/$(basename "$bin_path")" ]; then
-        echo "Already installed at $bin_path. Nothing to do."
-    else
-        cat <<EOF
-Not yet on PATH. To install the launcher system-wide:
-
-  mkdir -p ~/.local/bin
-  cp $bin_path ~/.local/bin/kimi-k3-lean
-  export PATH="\$HOME/.local/bin:\$PATH"
-
-Or use the bootstrap installer:
-
-  curl -fsSL https://raw.githubusercontent.com/chazhyseni/kimi-k3-lean/main/bootstrap.sh | bash
-EOF
-    fi
+    echo "uninstalled. repo at $K3_HOME kept (rm -rf to wipe)"
 }
 
 _k3_help() {
-    sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
-    echo ""
-    echo "Daily-use:"
-    echo "----------"
-    echo "  start              start the OpenAI server on http://127.0.0.1:8080"
-    echo "  chat -m \"msg\"     one-shot /v1/chat/completions (alias: ask)"
-    echo "  stop               stop the running server"
-    echo "  doctor             print install state (token, port, model-on-disk)"
+    cat <<EOF
+kimi-k3-lean — local Kimi K3 OpenAI server
 
+  start              start the server on http://$K3_HOST:$K3_PORT
+  stop               stop the server
+  status             show running PID + URL
+  chat -m "msg"      one-shot chat (alias: ask)
+  models             curl /v1/models
+  fetch              download K3 weights (~982 GB, resumable)
+  doctor             print install state
+  stack up [--webui] LAN stack with Caddy + Open WebUI
+  stack down         stop LAN stack
+  uninstall          stop server, remove launcher
+  help               this
 
-    echo ""
-    echo "Advanced:"
-    echo "----------"
-    echo "  status             show running PID + URL"
-    echo "  models             curl /v1/models (one-shot)"
-    echo "  fetch              download K3 weights (resumable, ~4 hrs, 982 GB)"
-    echo "  update             pull HEAD, refresh this launcher"
-    echo "  uninstall          stop server, remove this launcher"
-    echo "  config get|set NAME [VALUE]"
-    echo "  stack up [--webui] [--k3] [--clean] [--rebuild]"
-    echo "                       LAN stack: Caddy + gateway + Open WebUI"
-    echo "  stack down         docker compose down"
-    echo "  stack status       docker compose ps"
-    echo "  help               this"
+Env (via $K3_CONF or shell):
+  K3_HOST, K3_PORT, K3_API_KEY, K3_MODEL_DIR, K3_MODEL_NAME
+EOF
 }
 
 case "$cmd" in
-    serve|start)   _k3_serve "$@" ;;
-    stop)          _k3_stop ;;
-    status)        _k3_status ;;
-    models|list)   _k3_models ;;
-    chat|ask)      _k3_chat "$@" ;;
-    fetch)         _k3_fetch "$@" ;;
-    doctor)        _k3_doctor ;;
-    config)        _k3_config "$@" ;;
-    stack)         _k3_stack "$@" ;;
-    install)       _k3_install ;;
-    update)        _k3_update ;;
-    uninstall)     _k3_uninstall ;;
+    start|serve) _k3_serve "$@" ;;
+    stop)         _k3_stop ;;
+    status)       _k3_status ;;
+    chat|ask)     _k3_chat "$@" ;;
+    models|list)  _k3_models ;;
+    fetch)        _k3_fetch "$@" ;;
+    doctor)       _k3_doctor ;;
+    stack)        _k3_stack "$@" ;;
+    uninstall)    _k3_uninstall ;;
     help|--help|-h) _k3_help ;;
-    *)             echo "unknown subcommand: $cmd (try: start / stop / chat / doctor)"; exit 2 ;;
+    *)            echo "unknown: $cmd (try: help)"; exit 2 ;;
 esac
