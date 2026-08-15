@@ -209,8 +209,18 @@ elif find "$K3_MODEL_DIR" -maxdepth 2 -name "*.safetensors" -print -quit 2>/dev/
     # checkpoint is 1.56 TB across 96 shards; if we see fewer than 96
     # shards, the engine can't bind all tensors and falls back to
     # _NullEngine (chat returns engine_error).
-    n_shards=$(find "$K3_MODEL_DIR" -maxdepth 1 -name "*.safetensors" | wc -l)
-    have_bytes=$(find "$K3_MODEL_DIR" -maxdepth 1 -name "*.safetensors" -printf "%s\n" | awk "{s+=\$1} END {print s+0}")
+    n_shards=$(find "$K3_MODEL_DIR" -maxdepth 1 -name "*.safetensors" | wc -l | tr -d " ")
+    # Portable size: GNU stat -c%s, BSD/macOS stat -f%z. Pick at runtime.
+    if stat -c%s /dev/null >/dev/null 2>&1; then
+        size_cmd="stat -c%s"
+    else
+        size_cmd="stat -f%z"
+    fi
+    have_bytes=0
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        have_bytes=$((have_bytes + $("$size_cmd" "$f")))
+    done < <(find "$K3_MODEL_DIR" -maxdepth 1 -name "*.safetensors")
     expect_shards=96
     expect_bytes=1560936091448
     if [ "$n_shards" -eq "$expect_shards" ] && [ "$have_bytes" -eq "$expect_bytes" ]; then
