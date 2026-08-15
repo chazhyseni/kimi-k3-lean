@@ -220,7 +220,7 @@ What you get:
 | `http://localhost/client/...` | Laptop installer (`curl | bash` one-liner) |
 | `http://localhost/` | Open WebUI chat (only with `--webui`) |
 
-See **[`deploy/README.md`](deploy/README.md)** for the full reference,
+See **[deploy/README.md](../deploy/README.md)** for the full reference,
 Caddyfile internals, and the gateway's auth/size-limit/streaming pattern.
 
 For direct `docker compose` users (without the launcher):

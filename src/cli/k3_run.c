@@ -63,7 +63,7 @@ static void usage(FILE *f)
 "\n"
 "Memory is a dial, not a floor: the same model runs in 8 GB and in 224 GB and produces\n"
 "identical output. Give memory to the trunk before the expert cache, see\n"
-"docs/TUNING.md for why, and scripts/k3-doctor.sh to size this machine.\n"
+"docs/PERFORMANCE.md for why, and scripts/k3-doctor.sh to size this machine.\n"
 "(This build is the Option C refactor: many advanced flags are not yet wired.)\n");
 }
 

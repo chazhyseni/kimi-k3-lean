@@ -41,7 +41,7 @@ are not flattering.
 
 --- an honest caveat about the logit-parity fixture ---
 
-The elementwise logit comparison against the reference (docs/TESTING.md, raw logs in
+The elementwise logit comparison against the reference (the test suite (make test), raw logs in
 tests/fixtures/golden/) used prompt ids 3,4,5,6,7, which decode to:
 
   $%&'(

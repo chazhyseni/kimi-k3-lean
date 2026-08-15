@@ -20,7 +20,7 @@
  *   measured I/O share runs 40.9%-60.6% across the 12-rung ladder (docs/data/), dropping
  *   below 50% at 96 GB and above. The "I/O share" line printed at the end of every run
  *   reports it for that run. Going faster still means moving fewer bytes before it means
- *   computing less, which is why docs/TUNING.md is mostly about allocation.
+ *   computing less, which is why docs/PERFORMANCE.md is mostly about allocation.
  *
  * DECODE STRATEGY
  *   By default each step re-runs the whole prefix rather than carrying state forward.
@@ -352,7 +352,7 @@ static void usage(FILE *f)
 "\n"
 "Memory is a dial, not a floor: the same model runs in 8 GB and in 224 GB and produces\n"
 "identical output. Give memory to the trunk before the expert cache, see\n"
-"docs/TUNING.md for why, and scripts/k3-doctor.sh to size this machine.\n");
+"docs/PERFORMANCE.md for why, and scripts/k3-doctor.sh to size this machine.\n");
 }
 
 /* ------------------------------------------------------------------- presets ----

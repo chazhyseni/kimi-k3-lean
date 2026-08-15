@@ -208,7 +208,7 @@ make -j
 ./benchmarks/memory-ladder.sh ~/k3model ~/k3trunk out/   # the full sweep
 ```
 
-See [BENCHMARKING.md](BENCHMARKING.md), in particular, **replicate before you
+See the replication methodology below, in particular, **replicate before you
 conclude**. Replication is not a formality here: on a 33% noise floor, a single-sample
 difference of 20% is indistinguishable from dispersion, and treating one as a finding is
 the easiest mistake to make with this engine.

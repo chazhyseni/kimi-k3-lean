@@ -13,7 +13,7 @@
  *
  * THE THREE WEIGHT FIGURES, since they are easy to confuse
  *   108.81 GB   the 93 per-layer trunk runs, at bf16. Streamable, and re-read IN FULL
- *               on every token, which is why docs/TUNING.md says to feed the trunk
+ *               on every token, which is why docs/PERFORMANCE.md says to feed the trunk
  *               before the expert cache.
  *     4.70 GB   embed and lm_head. Always resident; not part of the streamed trunk.
  *   113.49 GB   the two together: 56,743,648,000 always-active parameters at bf16, the

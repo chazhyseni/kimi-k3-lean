@@ -61,7 +61,7 @@ cat "$OUT/machine.txt"
 echo
 
 # Budget -> split. The trunk is filled first: it is re-read in full every token, while
-# only ~25.8 GB of experts are touched. docs/TUNING.md has the measurements.
+# only ~25.8 GB of experts are touched. docs/PERFORMANCE.md has the measurements.
 rungs="8:3:1 16:7:4 32:16:10 64:35:24 96:60:30 128:110:13"
 
 REF=""

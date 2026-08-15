@@ -1,7 +1,7 @@
 # Measurement data
 
-The raw output behind every number in [PERFORMANCE.md](../PERFORMANCE.md) and
-[TUNING.md](../TUNING.md). Each table there cites the file it comes from.
+The raw output behind every number in [PERFORMANCE.md](../PERFORMANCE.md).
+Each table there cites the file it comes from.
 
 Everything was produced in one campaign on one machine. See [environment.txt](environment.txt)
 for the full capture, including the measurement hygiene applied before any timing was
@@ -99,5 +99,5 @@ and its limits.
 These are engine measurements: speed, memory, bytes moved, cache behaviour, and what the
 model emitted. They are **not** quality benchmarks. No perplexity, no task evaluation, no
 comparison against another implementation's output quality. The correctness evidence is
-separate and stronger: see [../TESTING.md](../TESTING.md) and the logs in
+separate and stronger: see the test suite (`make test`) and the logs in
 `tests/fixtures/gates/` and `tests/fixtures/golden/`.
