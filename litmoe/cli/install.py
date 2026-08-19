@@ -51,6 +51,44 @@ KNOWN_MODELS = {
         "default_quant": "UD-IQ1_M",
         "size_gb": {"UD-IQ1_M": 128, "UD-IQ2_M": 134, "UD-Q2_K_XL": 143, "UD-Q4_K_M": 264, "Q8_0": 453, "BF16": 852},
     },
+    "deepseek-v4-flash": {
+        "hf_repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+        "engine": "llamacpp",
+        "quants": ["UD-IQ1_S", "UD-IQ1_M", "UD-IQ2_M", "UD-IQ2_XXS", "UD-IQ3_S",
+                   "UD-IQ3_XXS", "UD-IQ4_NL", "UD-IQ4_XS", "UD-Q2_K_XL", "UD-Q3_K_M",
+                   "UD-Q3_K_XL", "UD-Q4_K_XL", "UD-Q8_K_XL"],
+        "default_quant": "UD-IQ1_S",
+        "size_gb": {"UD-IQ1_S": 83, "UD-IQ1_M": 87, "UD-Q2_K_XL": 97, "UD-Q4_K_XL": 155},
+    },
+    "gemma-4-31b": {
+        "hf_repo": "unsloth/gemma-4-31b-it-GGUF",
+        "engine": "llamacpp",
+        "quants": ["UD-IQ2_XXS", "UD-IQ2_M", "UD-IQ3_XXS", "UD-Q2_K_XL", "UD-Q3_K_XL",
+                   "UD-Q4_K_XL", "UD-Q5_K_XL", "UD-Q6_K_XL", "UD-Q8_K_XL",
+                   "Q3_K_M", "Q3_K_S", "Q4_0", "Q4_1", "Q4_K_M", "Q4_K_S",
+                   "Q5_K_M", "Q5_K_S", "Q6_K", "Q8_0", "BF16"],
+        "default_quant": "UD-Q4_K_XL",
+        "size_gb": {"UD-IQ2_XXS": 9, "UD-IQ2_M": 11, "Q4_K_M": 18, "Q8_0": 33, "BF16": 61},
+    },
+    "gemma-4-12b": {
+        "hf_repo": "unsloth/gemma-4-12b-it-GGUF",
+        "engine": "llamacpp",
+        "quants": ["UD-IQ2_M", "UD-IQ3_XXS", "UD-Q2_K_XL", "UD-Q3_K_XL", "UD-Q4_K_XL",
+                   "UD-Q5_K_XL", "UD-Q6_K_XL", "UD-Q8_K_XL",
+                   "Q3_K_M", "Q3_K_S", "Q4_0", "Q4_1", "Q4_K_M", "Q4_K_S",
+                   "Q5_K_M", "Q5_K_S", "Q6_K", "Q8_0", "BF16"],
+        "default_quant": "Q4_K_M",
+        "size_gb": {"UD-IQ2_M": 4, "Q4_K_M": 7, "Q8_0": 13, "BF16": 24},
+    },
+    "llama-4-scout": {
+        "hf_repo": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF",
+        "engine": "llamacpp",
+        "quants": ["BF16", "IQ4_NL", "IQ4_XS", "Q3_K_M", "Q4_0", "Q4_1", "Q4_K_M",
+                   "Q4_K_S", "Q5_K_M", "Q5_K_S", "Q6_K", "Q8_0",
+                   "UD-Q4_K_XL", "UD-Q5_K_XL", "UD-Q6_K_XL", "UD-Q8_K_XL"],
+        "default_quant": "Q4_K_M",
+        "size_gb": {"Q3_K_M": 52, "Q4_K_M": 65, "Q6_K": 88, "Q8_0": 115, "BF16": 216},
+    },
 }
 
 LLAMA_RELEASES_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
@@ -329,11 +367,13 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
     \b
     Examples:
       litmoe install                          # engine + pick a model interactively
-      litmoe install --model minimax-m3       # llama.cpp + MiniMax-M3 (UD-IQ1_M, ~128 GB)
-      litmoe install --model kimi-k3          # llama.cpp + Kimi-K3 (UD-IQ1_S, ~594 GB)
-      litmoe install --model qwen3.8          # llama.cpp + Qwen3.8-2.4T (~508 GB)
-      litmoe install --engine ktransformers   # ktransformers only (pip install kt-kernel)
-      litmoe install --model kimi-k3 --quant UD-Q2_K_XL
+      litmoe install --model gemma-4-12b      # 7 GB, runs on any 16 GB laptop
+      litmoe install --model gemma-4-31b      # 18 GB, 32 GB RAM
+      litmoe install --model llama-4-scout    # 65 GB MoE, 96 GB RAM
+      litmoe install --model deepseek-v4-flash # 83 GB MoE, 96 GB RAM
+      litmoe install --model minimax-m3       # 128 GB MoE, 128 GB RAM
+      litmoe install --model kimi-k3          # 594 GB MoE, 600+ GB RAM
+      litmoe install --engine ktransformers   # ktransformers (Linux + NVIDIA only)
     """
     models_dir = Path(models_dir) if models_dir else _default_models_dir()
     prefix = Path(prefix) if prefix else _default_prefix()

@@ -22,10 +22,10 @@ pip install -e .
 
 litmoe routes requests to inference engines. You need at least one.
 
-### Option A: llama.cpp (recommended — supports all three models)
+### Option A: llama.cpp (recommended — supports all models below)
 
-llama.cpp has native support for Kimi-K3, Qwen3.8-2.4T, and MiniMax-M3.
-All three architectures are merged to master and CI-tested.
+llama.cpp has native support for every model listed in this guide.
+All architectures are merged to master and CI-tested.
 
 **Prebuilt binary (fastest):**
 
@@ -48,8 +48,8 @@ cmake --build build --config Release -j --target llama-server
 
 ### Option B: ktransformers (Linux + NVIDIA only)
 
-ktransformers does NOT support Kimi-K3, Qwen3.8-2.4T, or MiniMax-M3.
-It does support DeepSeek-V3/R1, Kimi-K2, GLM-5.x, MiniMax-M2.5, Qwen3-30B-A3B.
+ktransformers supports DeepSeek-V3/R1, Kimi-K2, GLM-5.x, MiniMax-M2.5/M3,
+Qwen3-30B-A3B. Does NOT support Kimi-K3 or Qwen3.8-2.4T.
 
 **Not available on macOS.** kt-kernel depends on triton, which requires
 Linux + NVIDIA GPU. See [triton-lang/triton#3443](https://github.com/triton-lang/triton/issues/3443).
@@ -78,33 +78,117 @@ AVX2-only CPUs (AMD EPYC) work but slower.
 
 ## Step 3: Download model weights
 
-### Kimi-K3 (2.78T params, 93B active per token)
+### Smaller models (laptops, desktops, 16-96 GB RAM)
+
+These run on CPU-only machines via llama.cpp. No GPU required.
+
+#### Gemma-4-12B (12B dense, Aug 2026)
+
+```
+litmoe install --model gemma-4-12b
+```
+
+| Quant | Size | RAM needed | Fits |
+|---|---|---|---|
+| UD-IQ2_M | 4 GB | ~8 GB | 16 GB laptop |
+| Q4_K_M | 7 GB | ~10 GB | 16 GB laptop |
+| Q8_0 | 13 GB | ~16 GB | 16 GB laptop |
+| BF16 | 24 GB | ~28 GB | 32 GB |
+
+Google's latest 12B. Multimodal (text + image). Runs on any laptop.
+
+#### Gemma-4-31B (31B dense, Aug 2026)
+
+```
+litmoe install --model gemma-4-31b
+```
+
+| Quant | Size | RAM needed | Fits |
+|---|---|---|---|
+| UD-IQ2_XXS | 9 GB | ~12 GB | 16 GB laptop |
+| UD-Q4_K_XL | 19 GB | ~24 GB | 32 GB |
+| Q8_0 | 33 GB | ~40 GB | 64 GB |
+| BF16 | 61 GB | ~70 GB | 96 GB |
+
+Google's latest 31B. Most capable model that fits a 16 GB laptop at IQ2_XXS.
+
+#### Llama-4-Scout (109B total, 17B active MoE, 2026)
+
+```
+litmoe install --model llama-4-scout
+```
+
+| Quant | Size | RAM needed | Fits |
+|---|---|---|---|
+| Q3_K_M | 52 GB | ~60 GB | 64 GB |
+| Q4_K_M | 65 GB | ~75 GB | 96 GB |
+| Q6_K | 88 GB | ~96 GB | 96 GB (tight) |
+
+Meta's latest MoE. 109B total but only 17B active per token — fast inference,
+high capability. 16 experts.
+
+#### DeepSeek-V4-Flash (MoE, 256 experts top-6, Jul 2026)
+
+```
+litmoe install --model deepseek-v4-flash
+```
+
+| Quant | Size | RAM needed | Fits |
+|---|---|---|---|
+| UD-IQ1_S | 83 GB | ~90 GB | 96 GB |
+| UD-IQ1_M | 87 GB | ~95 GB | 96 GB (tight) |
+| UD-Q2_K_XL | 97 GB | ~110 GB | 128 GB |
+| UD-Q4_K_XL | 155 GB | ~170 GB | 192 GB |
+
+DeepSeek's newest compact MoE. 43 layers, 4096 hidden, 256 experts.
+Outperforms V4-Pro despite smaller size, per DeepSeek's benchmarks.
+
+### Large models (128 GB+ RAM)
+
+#### MiniMax-M3 (428B total, 23B active MoE, 2026)
+
+```
+litmoe install --model minimax-m3
+```
+
+| Quant | Size | RAM needed | Fits |
+|---|---|---|---|
+| UD-IQ1_M | 128 GB | ~140 GB | 128 GB (tight) / 192 GB |
+| UD-Q2_K_XL | 143 GB | ~160 GB | 192 GB |
+| UD-Q4_K_M | 264 GB | ~290 GB | 374 GB |
+| Q8_0 | 453 GB | ~500 GB | 512 GB |
+
+Engine: llama.cpp (native, merged 2026-07-26). ktransformers also supports M3
+(via SGLang + KT-Kernel, requires SM90 GPU).
+
+Most accessible trillion-scale model. At 128 GB IQ1_M, fits on a Mac Studio
+with 128 GB unified memory or a workstation with 192 GB RAM.
+
+#### Kimi-K3 (2.78T total, 93B active MoE, Aug 2026)
 
 ```
 litmoe install --model kimi-k3
 ```
 
-| Quant | Size | RAM+VRAM needed | Notes |
+| Quant | Size | RAM needed | Fits |
 |---|---|---|---|
-| UD-IQ1_S | 594 GB | ~594 GB | Lightest viable. Default. |
-| UD-IQ1_M | 649 GB | ~649 GB | Slightly better quality. |
-| UD-Q2_K_XL | 861 GB | ~861 GB | Better quality, needs more RAM. |
-| UD-Q4_K_XL | 1509 GB | ~1509 GB | High quality. Datacenter only. |
+| UD-IQ1_S | 594 GB | ~650 GB | 768 GB machine |
+| UD-IQ1_M | 649 GB | ~700 GB | 768 GB machine |
+| UD-Q2_K_XL | 861 GB | ~950 GB | 1 TB machine |
 
 Engine: llama.cpp only. ktransformers does not support K3.
 
-### Qwen3.8-2.4T (2.4T params, 95B active per token)
+#### Qwen3.8-2.4T (2.4T total, 95B active MoE, 2026)
 
 ```
 litmoe install --model qwen3.8
 ```
 
-| Quant | Size | RAM+VRAM needed | Notes |
+| Quant | Size | RAM needed | Fits |
 |---|---|---|---|
-| UD-Q1_0 | 397 GB | ~397 GB | Lightest available. |
-| UD-IQ1_S | 508 GB | ~508 GB | Default. |
-| UD-IQ1_M | 564 GB | ~564 GB | Better quality. |
-| UD-IQ2_XXS | 657 GB | ~657 GB | Higher quality. |
+| UD-Q1_0 | 397 GB | ~440 GB | 512 GB machine |
+| UD-IQ1_S | 508 GB | ~560 GB | 768 GB machine |
+| UD-IQ1_M | 564 GB | ~620 GB | 768 GB machine |
 
 Engine: llama.cpp only. ktransformers does not support Qwen3.8-2.4T.
 
@@ -113,24 +197,7 @@ open bugs in llama.cpp (CUDA lockups, long-context crashes). The 2.4T variant
 shares the same architecture (Qwen3_5MoeForCausalLM) but has no reported
 issues specific to it. Test before relying on it in production.
 
-### MiniMax-M3 (428B params, 23B active per token)
-
-```
-litmoe install --model minimax-m3
-```
-
-| Quant | Size | RAM+VRAM needed | Notes |
-|---|---|---|---|
-| UD-IQ1_M | 128 GB | ~128 GB | Lightest. Runs on 128 GB RAM machine. |
-| UD-IQ2_M | 134 GB | ~134 GB | |
-| UD-Q2_K_XL | 143 GB | ~143 GB | Good quality/size balance. |
-| UD-Q4_K_M | 264 GB | ~264 GB | High quality. Needs 256+ GB RAM. |
-| Q8_0 | 453 GB | ~453 GB | Near-lossless. |
-
-Engine: llama.cpp (native, merged 2026-07-26, CI-tested).
-ktransformers supports MiniMax-M2.5 but has no M3 tutorial or optimize rule.
-
-## Hardware requirements by model
+## Hardware requirements
 
 The total memory (RAM + VRAM) must be at least the GGUF size. VRAM holds GPU
 layers (`-ngl`), RAM holds the rest. Add ~10% overhead for KV cache and OS.
@@ -173,8 +240,7 @@ parameter count means each token only computes 4 of 128 experts + 1 shared,
 keeping per-token compute low.
 
 No measured throughput data for M3 on CPU exists in this project. The
-ktransformers MiniMax-M2.5 tutorial reports running on 2x RTX 4090 (48 GB
-VRAM) + 200 GB RAM, but M3 is a different model.
+ktransformers MiniMax-M3 tutorial targets 8x H20 GPUs with CPU expert offloading.
 
 ## Step 4: Configure models.yaml
 
@@ -226,17 +292,19 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 
 | Model | llama.cpp | ktransformers | Default quant | Size |
 |---|---|---|---|---|
+| Gemma-4-12B | Yes (native) | No | Q4_K_M | 7 GB |
+| Gemma-4-31B | Yes (native) | No | UD-Q4_K_XL | 19 GB |
+| Llama-4-Scout | Yes (native) | No | Q4_K_M | 65 GB |
+| DeepSeek-V4-Flash | Yes (native) | No | UD-IQ1_S | 83 GB |
+| MiniMax-M3 | Yes (native) | Yes (SM90 GPU) | UD-IQ1_M | 128 GB |
 | Kimi-K3 | Yes (native) | No | UD-IQ1_S | 594 GB |
 | Qwen3.8-2.4T | Yes (native) | No | UD-IQ1_S | 508 GB |
-| MiniMax-M3 | Yes (native) | No (M2.5 yes) | UD-IQ1_M | 128 GB |
 | DeepSeek-V3 | Yes | Yes (Linux+NVIDIA) | varies | ~600 GB |
 | Kimi-K2 | Yes | Yes (Linux+NVIDIA, ~10 t/s) | Q4_K_M | ~600 GB |
-| GLM-5.x | Yes | Yes (Linux+NVIDIA) | varies | varies |
-| Qwen3-30B-A3B | Yes | Yes (Linux+NVIDIA) | varies | ~30 GB |
 
 ktransformers requires Linux + NVIDIA GPU (triton dependency).
 llama.cpp works on Linux, macOS (Metal), and Windows (Vulkan/DirectML).
 
 Sources: llama.cpp source (LLM_ARCH registrations, model .cpp files), ktransformers
-optimize rules directory, HuggingFace model configs and GGUF repositories. All
+optimize rules and tutorials, HuggingFace model configs and GGUF repositories. All
 verified August 2026.

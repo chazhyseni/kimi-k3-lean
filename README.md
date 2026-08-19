@@ -97,24 +97,31 @@ port: 8080
 api_key: null   # or a string to require Bearer auth
 
 models:
+  # Gemma-4-12B via llama.cpp (7 GB, runs on any 16 GB laptop)
+  - id: gemma-4-12b
+    engine: llamacpp
+    model_path: unsloth/gemma-4-12b-it-GGUF:Q4_K_M
+    n_gpu_layers: -1     # -1 = all, 0 = CPU only
+    n_ctx: 4096
+
+  # DeepSeek-V4-Flash via llama.cpp (83 GB MoE, 96 GB RAM)
+  - id: deepseek-v4-flash
+    engine: llamacpp
+    model_path: unsloth/DeepSeek-V4-Flash-0731-GGUF:UD-IQ1_S
+    n_gpu_layers: -1
+    n_ctx: 4096
+
+  # MiniMax-M3 via llama.cpp (GGUF from Unsloth, 128 GB — smallest viable trillion-scale)
+  - id: minimax-m3
+    engine: llamacpp
+    model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M
+    n_gpu_layers: -1
+    n_ctx: 4096
+
   # Kimi-K3 via llama.cpp (GGUF from Unsloth, 594 GB)
   - id: kimi-k3
     engine: llamacpp
     model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
-    n_gpu_layers: -1     # -1 = all, 0 = CPU only
-    n_ctx: 4096
-
-  # Qwen3.8-2.4T via llama.cpp (GGUF from Unsloth, 508 GB)
-  - id: qwen3.8-2.4t
-    engine: llamacpp
-    model_path: unsloth/Qwen3.8-2.4T-A95B-GGUF:UD-IQ1_S
-    n_gpu_layers: -1
-    n_ctx: 4096
-
-  # MiniMax-M3 via llama.cpp (GGUF from Unsloth, 128 GB — smallest viable)
-  - id: minimax-m3
-    engine: llamacpp
-    model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M
     n_gpu_layers: -1
     n_ctx: 4096
 
