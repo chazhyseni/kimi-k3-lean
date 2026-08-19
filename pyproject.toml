@@ -23,9 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ktransformers = ["kt-kernel>=0.5"]
+ktransformers = ["kt-kernel>=0.7"]
 llamacpp = []
-all = ["kt-kernel>=0.5"]
+all = ["kt-kernel>=0.7"]
 
 [project.scripts]
 litmoe = "litmoe.cli.main:main"

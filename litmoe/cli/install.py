@@ -146,9 +146,47 @@ def install_llamacpp(prefix: Path) -> Path:
 
 
 def install_ktransformers() -> None:
-    """Install ktransformers via pip."""
-    click.echo("  Installing kt-kernel via pip...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "kt-kernel"], check=True)
+    """Install ktransformers.
+
+    Tries pip install first (works on Ubuntu 22.04+ / glibc 2.35+).
+    Falls back to building from source via the official install.sh script
+    for older systems (Debian 11, etc.).
+    """
+    click.echo("  Installing ktransformers via pip...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "kt-kernel"],
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode == 0:
+        click.echo("  kt-kernel installed via pip.")
+        return
+
+    click.echo("  pip install failed (likely glibc < 2.35 or Python < 3.10).")
+    click.echo("  Falling back to source build via install.sh...")
+    click.echo(f"  pip error: {result.stderr[:200]}")
+
+    # Clone and run the official installer
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        clone = subprocess.run(
+            ["git", "clone", "--depth", "1", "--recurse-submodules",
+             "https://github.com/kvcache-ai/ktransformers.git", tmpdir],
+            capture_output=True, text=True, timeout=120,
+        )
+        if clone.returncode != 0:
+            click.echo(f"  git clone failed: {clone.stderr[:200]}", err=True)
+            sys.exit(1)
+
+        build = subprocess.run(
+            ["bash", f"{tmpdir}/install.sh", "kt-kernel"],
+            cwd=tmpdir, timeout=600,
+        )
+        if build.returncode != 0:
+            click.echo("  Source build failed. See output above.", err=True)
+            click.echo("  Manual install: https://github.com/kvcache-ai/ktransformers", err=True)
+            sys.exit(1)
+
+    click.echo("  ktransformers built from source.")
 
 
 # ---------------------------------------------------------------------------

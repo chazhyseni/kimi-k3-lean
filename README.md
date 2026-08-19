@@ -42,7 +42,7 @@ Trillion-parameter MoE models (Kimi K3, Qwen3.8-2.4T, DeepSeek-V3) are open weig
 - **AVX2-only CPU backend** — works on AMD EPYC
 - **Supported model families:** DeepSeek-V3/R1, GLM-5.x, MiniMax-M2.x, Kimi-K2.x, Qwen3, SmallThinker (see their model registry)
 
-**Install:** `pip install kt-kernel`
+**Install:** `litmoe install --engine ktransformers` (pip, needs glibc 2.35+) or build from [source](https://github.com/kvcache-ai/ktransformers)
 
 ### llama.cpp
 

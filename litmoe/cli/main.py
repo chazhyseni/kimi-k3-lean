@@ -85,11 +85,11 @@ def doctor():
     if kt_installed():
         click.echo("  ktransformers: installed")
     else:
-        click.echo("  ktransformers: NOT installed (pip install kt-kernel)")
+        click.echo("  ktransformers: NOT installed (litmoe install --engine ktransformers)")
     if llama_installed():
         click.echo("  llama.cpp: installed")
     else:
-        click.echo("  llama.cpp: NOT installed (install llama-server)")
+        click.echo("  llama.cpp: NOT installed (litmoe install --engine llamacpp)")
 
     # Recommendation
     click.echo()
@@ -102,8 +102,7 @@ def doctor():
     elif llama_installed():
         click.echo("  llama.cpp")
     else:
-        click.echo("  None - install ktransformers: pip install kt-kernel")
-        click.echo("          or build llama.cpp: https://github.com/ggml-org/llama.cpp")
+        click.echo("  None - run 'litmoe install --engine llamacpp' or 'litmoe install --engine ktransformers'")
 
 
 @cli.command()

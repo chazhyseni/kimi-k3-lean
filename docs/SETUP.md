@@ -51,12 +51,26 @@ cmake --build build --config Release -j --target llama-server
 ktransformers does NOT support Kimi-K3, Qwen3.8-2.4T, or MiniMax-M3.
 It does support DeepSeek-V3/R1, Kimi-K2, GLM-5.x, MiniMax-M2.5, Qwen3-30B-A3B.
 
+**Via pip (requires Ubuntu 22.04+ / glibc 2.35+ and Python 3.10+):**
+
 ```bash
-pip install kt-kernel
+litmoe install --engine ktransformers
+```
+
+**Via source build (for older systems like Debian 11):**
+
+```bash
+git clone --depth 1 --recurse-submodules https://github.com/kvcache-ai/ktransformers.git
+cd ktransformers
+bash install.sh kt-kernel
 ```
 
 Requires CUDA toolkit 12.8+ for GPU backend. CPU-only mode works with AVX-512
 or AMX (Intel Xeon 4th gen+). AVX2-only CPUs (AMD EPYC) work but slower.
+
+Note: kt-kernel PyPI wheels are built for manylinux_2_35 (glibc 2.35+).
+If `pip install kt-kernel` fails with "No matching distribution found",
+your glibc is too old — use the source build above.
 
 ## Step 3: Download model weights
 
