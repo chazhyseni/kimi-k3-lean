@@ -101,7 +101,7 @@ class Gateway:
         # Use translated payload if anthropic, otherwise original body
         send_body = json.dumps(payload).encode() if anthropic else body
         stream = payload.get("stream", False)
-        timeout = httpx.Timeout(connect=10.0, read=None, write=600.0)
+        timeout = httpx.Timeout(connect=10.0, read=600.0, write=600.0, pool=10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if stream:
                 return StreamingResponse(
