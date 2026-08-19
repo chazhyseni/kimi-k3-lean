@@ -36,6 +36,7 @@ Trillion-parameter MoE models (Kimi K3, Qwen3.8-2.4T, DeepSeek-V3) are open weig
 **Authors:** MADSys Lab @ Tsinghua University + Approaching.AI
 **Paper:** SOSP 2025 — "KTransformers: Unleashing the Full Potential of CPU/GPU Hybrid Inference for MoE Models"
 
+- **Linux + NVIDIA GPU only** (kt-kernel depends on triton; macOS not supported)
 - **GPU offloading:** Hot experts on GPU, cold experts on CPU
 - **CPU kernels:** AMX (Intel Xeon 4th gen+), AVX-512, AVX2 (broad CPU compatibility)
 - **Native precision:** BF16, FP8, AMXINT4/INT8

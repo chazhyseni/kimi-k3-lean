@@ -46,10 +46,14 @@ cmake --build build --config Release -j --target llama-server
 # Binary is at build/bin/llama-server — add it to your PATH
 ```
 
-### Option B: ktransformers (for DeepSeek-V3, Kimi-K2, GLM, Qwen3-30B)
+### Option B: ktransformers (Linux + NVIDIA only)
 
 ktransformers does NOT support Kimi-K3, Qwen3.8-2.4T, or MiniMax-M3.
 It does support DeepSeek-V3/R1, Kimi-K2, GLM-5.x, MiniMax-M2.5, Qwen3-30B-A3B.
+
+**Not available on macOS.** kt-kernel depends on triton, which requires
+Linux + NVIDIA GPU. See [triton-lang/triton#3443](https://github.com/triton-lang/triton/issues/3443).
+On macOS, use llama.cpp (Metal backend) instead.
 
 ```bash
 litmoe install --engine ktransformers
@@ -225,10 +229,13 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 | Kimi-K3 | Yes (native) | No | UD-IQ1_S | 594 GB |
 | Qwen3.8-2.4T | Yes (native) | No | UD-IQ1_S | 508 GB |
 | MiniMax-M3 | Yes (native) | No (M2.5 yes) | UD-IQ1_M | 128 GB |
-| DeepSeek-V3 | Yes | Yes (optimized) | varies | ~600 GB |
-| Kimi-K2 | Yes | Yes (optimized, ~10 t/s) | Q4_K_M | ~600 GB |
-| GLM-5.x | Yes | Yes (optimized) | varies | varies |
-| Qwen3-30B-A3B | Yes | Yes (optimized) | varies | ~30 GB |
+| DeepSeek-V3 | Yes | Yes (Linux+NVIDIA) | varies | ~600 GB |
+| Kimi-K2 | Yes | Yes (Linux+NVIDIA, ~10 t/s) | Q4_K_M | ~600 GB |
+| GLM-5.x | Yes | Yes (Linux+NVIDIA) | varies | varies |
+| Qwen3-30B-A3B | Yes | Yes (Linux+NVIDIA) | varies | ~30 GB |
+
+ktransformers requires Linux + NVIDIA GPU (triton dependency).
+llama.cpp works on Linux, macOS (Metal), and Windows (Vulkan/DirectML).
 
 Sources: llama.cpp source (LLM_ARCH registrations, model .cpp files), ktransformers
 optimize rules directory, HuggingFace model configs and GGUF repositories. All

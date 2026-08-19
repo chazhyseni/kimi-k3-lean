@@ -150,8 +150,23 @@ def install_ktransformers() -> None:
 
     Clones the repo and pip-installs from source. This bypasses the prebuilt
     wheel glibc requirement (manylinux_2_35) by building locally.
+
+    Limitations:
+    - Does not work on macOS (kt-kernel depends on triton, which is
+      Linux+NVIDIA only: https://github.com/triton-lang/triton/issues/3443)
+    - Requires Python 3.11+ and a C++ compiler (gcc/clang)
+    - CUDA toolkit needed for GPU backend (CPU-only mode works without it)
     """
+    import platform
     import tempfile
+
+    if platform.system() == "Darwin":
+        click.echo("  ktransformers is not available on macOS.")
+        click.echo("  kt-kernel depends on triton, which requires Linux + NVIDIA GPU.")
+        click.echo("  See: https://github.com/triton-lang/triton/issues/3443")
+        click.echo("  Use llama.cpp instead: litmoe install --engine llamacpp")
+        click.echo("  llama.cpp supports macOS via the Metal backend.")
+        sys.exit(1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         click.echo(f"  Cloning ktransformers to {tmpdir}...")
