@@ -14,8 +14,8 @@ venv/
 logs/
 *.log
 
-# Config
-models.yaml
+# Config (root-level user config; examples/ ships a tracked sample)
+/models.yaml
 .env
 
 # IDE

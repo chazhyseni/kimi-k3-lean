@@ -1,0 +1,28 @@
+# Example litmoe models.yaml
+# Copy to models.yaml and edit paths.
+
+host: 127.0.0.1
+port: 8080
+api_key: null
+
+models:
+  # Kimi-K3 via llama.cpp (GGUF from Unsloth)
+  - id: kimi-k3
+    engine: llamacpp
+    model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
+    n_gpu_layers: -1
+    n_ctx: 4096
+
+  # Qwen3.8-2.4T via llama.cpp (GGUF from Unsloth)
+  - id: qwen3.8-2.4t
+    engine: llamacpp
+    model_path: unsloth/Qwen3.8-2.4T-A95B-GGUF:UD-IQ1_S
+    n_gpu_layers: -1
+    n_ctx: 4096
+
+  # DeepSeek-V3 via ktransformers (safetensors directory)
+  # - id: deepseek-v3
+  #   engine: ktransformers
+  #   model_path: /data/deepseek-v3
+  #   n_gpu_layers: -1
+  #   n_ctx: 4096
