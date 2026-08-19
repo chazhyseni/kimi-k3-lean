@@ -175,15 +175,18 @@ def install_ktransformers() -> None:
             click.echo(f"  submodule init warning: {sub.stderr.strip()[:200]}", err=True)
 
         # Install kt-kernel from local source (builds C++/CUDA via cmake+pybind11)
-        # Use --index-url to skip NGC registry (pypi.ngc.nvidia.com) which often
-        # fails DNS resolution and causes 15+ minutes of retry timeouts
+        # Clear NGC registry (pypi.ngc.nvidia.com) from pip config — it fails
+        # DNS resolution on this machine and causes 15+ minutes of retry timeouts
+        # per package. --index-url alone doesn't remove extra-index-url from
+        # pip.conf, so we override via environment variables.
         click.echo("  Building kt-kernel from source (pip install ./kt-kernel)...")
         click.echo("  This compiles C++/CUDA kernels and may take several minutes.")
+        pip_env = os.environ.copy()
+        pip_env["PIP_INDEX_URL"] = "https://pypi.org/simple/"
+        pip_env["PIP_EXTRA_INDEX_URL"] = ""
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install",
-             "--index-url", "https://pypi.org/simple/",
-             f"{tmpdir}/kt-kernel"],
-            timeout=600,
+            [sys.executable, "-m", "pip", "install", f"{tmpdir}/kt-kernel"],
+            timeout=600, env=pip_env,
         )
         if result.returncode != 0:
             click.echo("  kt-kernel build failed. See output above.", err=True)
@@ -193,10 +196,8 @@ def install_ktransformers() -> None:
         # Install the ktransformers wrapper package
         click.echo("  Installing ktransformers package...")
         result2 = subprocess.run(
-            [sys.executable, "-m", "pip", "install",
-             "--index-url", "https://pypi.org/simple/",
-             tmpdir],
-            timeout=120,
+            [sys.executable, "-m", "pip", "install", tmpdir],
+            timeout=120, env=pip_env,
         )
         if result2.returncode != 0:
             click.echo("  ktransformers package install failed. See output above.", err=True)
