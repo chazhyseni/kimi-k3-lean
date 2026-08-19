@@ -68,13 +68,12 @@ git clone https://github.com/chazhyseni/litMoE
 cd litMoE
 pip install -e .
 
-# Install at least one engine
-pip install kt-kernel                    # ktransformers
-# or build llama.cpp (see above)
-
-# Create config
-litmoe init
-# Edit models.yaml: set model_path to your model directory or GGUF
+# Install an engine + download a model
+litmoe install --engine llamacpp          # install llama.cpp prebuilt binary
+litmoe install --model minimax-m3         # download MiniMax-M3 (128 GB, smallest viable)
+# or:
+litmoe install --model kimi-k3            # 594 GB
+litmoe install --model qwen3.8            # 508 GB
 
 # Start
 litmoe serve
@@ -82,6 +81,9 @@ litmoe serve
 # Test
 curl http://127.0.0.1:8080/v1/models
 ```
+
+Full setup guide with hardware requirements, quantization options, and per-model
+instructions: [docs/SETUP.md](docs/SETUP.md)
 
 ---
 
@@ -93,17 +95,24 @@ port: 8080
 api_key: null   # or a string to require Bearer auth
 
 models:
-  # Kimi-K3 via llama.cpp (GGUF from Unsloth)
+  # Kimi-K3 via llama.cpp (GGUF from Unsloth, 594 GB)
   - id: kimi-k3
     engine: llamacpp
     model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
     n_gpu_layers: -1     # -1 = all, 0 = CPU only
     n_ctx: 4096
 
-  # Qwen3.8-2.4T via llama.cpp (GGUF from Unsloth)
+  # Qwen3.8-2.4T via llama.cpp (GGUF from Unsloth, 508 GB)
   - id: qwen3.8-2.4t
     engine: llamacpp
     model_path: unsloth/Qwen3.8-2.4T-A95B-GGUF:UD-IQ1_S
+    n_gpu_layers: -1
+    n_ctx: 4096
+
+  # MiniMax-M3 via llama.cpp (GGUF from Unsloth, 128 GB — smallest viable)
+  - id: minimax-m3
+    engine: llamacpp
+    model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M
     n_gpu_layers: -1
     n_ctx: 4096
 

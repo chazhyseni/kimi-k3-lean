@@ -125,10 +125,11 @@ litmoe/
 │   └── models.yaml         # engine routes
 ├── deploy/
 │   └── docker-compose.yml  # gateway + caddy + openwebui
-└── docs/
-    ├── METHODOLOGY.md      # this file
-    ├── ARCHITECTURE.md     # architecture diagram
-    └── architecture.svg    # rendered diagram
+├── docs/
+│   ├── SETUP.md           # installation and hardware requirements
+│   ├── METHODOLOGY.md      # this file
+│   ├── ARCHITECTURE.md     # architecture diagram
+│   └── architecture.svg    # rendered diagram
 ```
 
 ## What was learned along the way

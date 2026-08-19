@@ -31,7 +31,7 @@ KNOWN_MODELS = {
         "quants": ["UD-IQ1_S", "UD-IQ1_M", "UD-IQ2_XXS", "UD-Q1_0", "UD-Q2_K_XL",
                    "UD-Q4_K_XL", "UD-Q8_K_XL", "UD-TQ1_0", "UD-TQ2_0"],
         "default_quant": "UD-IQ1_S",
-        "size_gb": {"UD-IQ1_S": 594, "UD-Q2_K_XL": 861},
+        "size_gb": {"UD-IQ1_S": 594, "UD-IQ1_M": 649, "UD-Q2_K_XL": 861, "UD-Q4_K_XL": 1509},
     },
     "qwen3.8": {
         "hf_repo": "unsloth/Qwen3.8-2.4T-A95B-GGUF",
@@ -39,7 +39,17 @@ KNOWN_MODELS = {
         "quants": ["UD-IQ1_S", "UD-IQ1_M", "UD-IQ2_XS", "UD-IQ2_XXS", "UD-IQ3_XXS",
                    "UD-IQ4_XS", "UD-Q1_0", "Q8_0", "BF16"],
         "default_quant": "UD-IQ1_S",
-        "size_gb": {"UD-IQ1_S": 508, "UD-IQ1_M": 564},
+        "size_gb": {"UD-IQ1_S": 508, "UD-IQ1_M": 564, "UD-Q1_0": 397, "UD-IQ2_XXS": 657},
+    },
+    "minimax-m3": {
+        "hf_repo": "unsloth/MiniMax-M3-GGUF",
+        "engine": "llamacpp",
+        "quants": ["UD-IQ1_M", "UD-IQ2_M", "UD-IQ2_XXS", "UD-IQ3_S", "UD-IQ3_XXS",
+                   "UD-IQ4_NL", "UD-IQ4_XS", "UD-Q2_K_XL", "UD-Q3_K_M", "UD-Q3_K_XL",
+                   "UD-Q4_K_M", "UD-Q4_K_S", "UD-Q4_K_XL", "UD-Q5_K_M", "UD-Q5_K_S",
+                   "UD-Q5_K_XL", "UD-Q6_K", "UD-Q6_K_XL", "UD-Q8_K_XL", "Q8_0", "BF16"],
+        "default_quant": "UD-IQ1_M",
+        "size_gb": {"UD-IQ1_M": 128, "UD-IQ2_M": 134, "UD-Q2_K_XL": 143, "UD-Q4_K_M": 264, "Q8_0": 453, "BF16": 852},
     },
 }
 
@@ -248,6 +258,7 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
     \b
     Examples:
       litmoe install                          # engine + pick a model interactively
+      litmoe install --model minimax-m3       # llama.cpp + MiniMax-M3 (UD-IQ1_M, ~128 GB)
       litmoe install --model kimi-k3          # llama.cpp + Kimi-K3 (UD-IQ1_S, ~594 GB)
       litmoe install --model qwen3.8          # llama.cpp + Qwen3.8-2.4T (~508 GB)
       litmoe install --engine ktransformers   # ktransformers only (pip install kt-kernel)

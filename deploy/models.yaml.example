@@ -1,16 +1,23 @@
 # litmoe models.yaml — example configuration
 # Copy this to models.yaml and edit the paths to your model checkpoints.
+# See docs/SETUP.md for full installation instructions.
 
 host: 127.0.0.1
 port: 8080
 api_key: null   # or a string to require Bearer auth
 
 models:
-  # Example: llama.cpp engine (Kimi-K3, Qwen3.8, etc.)
+  # Example: llama.cpp engine (Kimi-K3, Qwen3.8, MiniMax-M3, etc.)
+  # - id: minimax-m3
+  #   engine: llamacpp
+  #   model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M   # 128 GB
+  #   n_gpu_layers: -1     # -1 = all, 0 = CPU only
+  #   n_ctx: 4096
+
   # - id: kimi-k3
   #   engine: llamacpp
-  #   model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
-  #   n_gpu_layers: -1     # -1 = all, 0 = CPU only
+  #   model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S      # 594 GB
+  #   n_gpu_layers: -1
   #   n_ctx: 4096
 
   # Example: ktransformers engine (DeepSeek-V3, GLM, Kimi-K2, etc.)
