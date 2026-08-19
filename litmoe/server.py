@@ -102,13 +102,16 @@ class Gateway:
         send_body = json.dumps(payload).encode() if anthropic else body
         stream = payload.get("stream", False)
         timeout = httpx.Timeout(connect=10.0, read=600.0, write=600.0, pool=10.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            if stream:
-                return StreamingResponse(
-                    _stream_response(client, target_url, send_body),
-                    media_type="text/event-stream",
-                )
-            else:
+
+        if stream:
+            # For streaming, create the client outside async with so it
+            # stays open for the duration of the StreamingResponse iterator
+            return StreamingResponse(
+                _stream_response(target_url, send_body, timeout),
+                media_type="text/event-stream",
+            )
+        else:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 r = await client.post(target_url, content=send_body, headers={"content-type": "application/json"})
                 return JSONResponse(content=r.json(), status_code=r.status_code)
 
@@ -134,11 +137,12 @@ class Gateway:
             engine.stop()
 
 
-async def _stream_response(client: httpx.AsyncClient, url: str, body: bytes):
-    """Stream responses from upstream engine."""
-    async with client.stream("POST", url, content=body, headers={"content-type": "application/json"}) as r:
-        async for chunk in r.aiter_bytes():
-            yield chunk
+async def _stream_response(url: str, body: bytes, timeout: httpx.Timeout):
+    """Stream responses from upstream engine. Owns the httpx client lifecycle."""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream("POST", url, content=body, headers={"content-type": "application/json"}) as r:
+            async for chunk in r.aiter_bytes():
+                yield chunk
 
 
 def _anthropic_to_openai(payload: dict) -> dict:
