@@ -37,7 +37,7 @@ services:
     container_name: litmoe-openwebui
     restart: unless-stopped
     ports:
-      - "3000:8080"
+      - "8000:8080"
     volumes:
       - openwebui_data:/app/backend/data
     environment:
