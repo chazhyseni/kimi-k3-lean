@@ -175,10 +175,14 @@ def install_ktransformers() -> None:
             click.echo(f"  submodule init warning: {sub.stderr.strip()[:200]}", err=True)
 
         # Install kt-kernel from local source (builds C++/CUDA via cmake+pybind11)
+        # Use --index-url to skip NGC registry (pypi.ngc.nvidia.com) which often
+        # fails DNS resolution and causes 15+ minutes of retry timeouts
         click.echo("  Building kt-kernel from source (pip install ./kt-kernel)...")
         click.echo("  This compiles C++/CUDA kernels and may take several minutes.")
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", f"{tmpdir}/kt-kernel"],
+            [sys.executable, "-m", "pip", "install",
+             "--index-url", "https://pypi.org/simple/",
+             f"{tmpdir}/kt-kernel"],
             timeout=600,
         )
         if result.returncode != 0:
@@ -189,7 +193,9 @@ def install_ktransformers() -> None:
         # Install the ktransformers wrapper package
         click.echo("  Installing ktransformers package...")
         result2 = subprocess.run(
-            [sys.executable, "-m", "pip", "install", tmpdir],
+            [sys.executable, "-m", "pip", "install",
+             "--index-url", "https://pypi.org/simple/",
+             tmpdir],
             timeout=120,
         )
         if result2.returncode != 0:
