@@ -148,45 +148,56 @@ def install_llamacpp(prefix: Path) -> Path:
 def install_ktransformers() -> None:
     """Install ktransformers.
 
-    Tries pip install first (works on Ubuntu 22.04+ / glibc 2.35+).
-    Falls back to building from source via the official install.sh script
-    for older systems (Debian 11, etc.).
+    Clones the repo and pip-installs from source. This bypasses the prebuilt
+    wheel glibc requirement (manylinux_2_35) by building locally.
     """
-    click.echo("  Installing ktransformers via pip...")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "kt-kernel"],
-        capture_output=True, text=True, timeout=120,
-    )
-    if result.returncode == 0:
-        click.echo("  kt-kernel installed via pip.")
-        return
-
-    click.echo("  pip install failed (likely glibc < 2.35 or Python < 3.10).")
-    click.echo("  Falling back to source build via install.sh...")
-    click.echo(f"  pip error: {result.stderr[:200]}")
-
-    # Clone and run the official installer
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmpdir:
+        click.echo(f"  Cloning ktransformers to {tmpdir}...")
         clone = subprocess.run(
-            ["git", "clone", "--depth", "1", "--recurse-submodules",
+            ["git", "clone", "--depth", "1",
              "https://github.com/kvcache-ai/ktransformers.git", tmpdir],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=180,
         )
         if clone.returncode != 0:
-            click.echo(f"  git clone failed: {clone.stderr[:200]}", err=True)
+            click.echo(f"  git clone failed: {clone.stderr.strip()[:200]}", err=True)
+            click.echo("  Manual: https://github.com/kvcache-ai/ktransformers", err=True)
             sys.exit(1)
 
-        build = subprocess.run(
-            ["bash", f"{tmpdir}/install.sh", "kt-kernel"],
-            cwd=tmpdir, timeout=600,
+        # Initialize submodules (kt-kernel needs them for C++/CUDA code)
+        click.echo("  Initializing submodules...")
+        sub = subprocess.run(
+            ["git", "submodule", "update", "--init", "--recursive", "--depth", "1"],
+            cwd=tmpdir, capture_output=True, text=True, timeout=180,
         )
-        if build.returncode != 0:
-            click.echo("  Source build failed. See output above.", err=True)
-            click.echo("  Manual install: https://github.com/kvcache-ai/ktransformers", err=True)
+        if sub.returncode != 0:
+            click.echo(f"  submodule init warning: {sub.stderr.strip()[:200]}", err=True)
+
+        # Install kt-kernel from local source (builds C++/CUDA via cmake+pybind11)
+        click.echo("  Building kt-kernel from source (pip install ./kt-kernel)...")
+        click.echo("  This compiles C++/CUDA kernels and may take several minutes.")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", f"{tmpdir}/kt-kernel"],
+            timeout=600,
+        )
+        if result.returncode != 0:
+            click.echo("  kt-kernel build failed. See output above.", err=True)
+            click.echo("  Manual: https://github.com/kvcache-ai/ktransformers", err=True)
             sys.exit(1)
 
-    click.echo("  ktransformers built from source.")
+        # Install the ktransformers wrapper package
+        click.echo("  Installing ktransformers package...")
+        result2 = subprocess.run(
+            [sys.executable, "-m", "pip", "install", tmpdir],
+            timeout=120,
+        )
+        if result2.returncode != 0:
+            click.echo("  ktransformers package install failed. See output above.", err=True)
+            click.echo("  Manual: https://github.com/kvcache-ai/ktransformers", err=True)
+            sys.exit(1)
+
+    click.echo("  ktransformers installed from source.")
 
 
 # ---------------------------------------------------------------------------
