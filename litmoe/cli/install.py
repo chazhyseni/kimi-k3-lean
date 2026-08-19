@@ -107,10 +107,34 @@ def _default_prefix() -> Path:
 # ---------------------------------------------------------------------------
 
 def install_llamacpp(prefix: Path) -> Path:
-    """Download prebuilt llama.cpp binaries from GitHub releases.
+    """Install llama.cpp.
 
-    Returns the directory containing llama-server.
+    Downloads prebuilt binaries if glibc is new enough (>= 2.34).
+    Falls back to building from source on older systems (Debian 11, etc.).
     """
+    # Check glibc version
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        getver = libc.gnu_get_libc_version
+        getver.restype = ctypes.c_char_p
+        glibc_ver = getver().decode()
+        major, minor = glibc_ver.split(".")[:2]
+        glibc_ok = (int(major), int(minor)) >= (2, 34)
+    except Exception:
+        glibc_ok = False
+        glibc_ver = "unknown"
+
+    if glibc_ok:
+        return _install_llamacpp_prebuilt(prefix)
+    else:
+        click.echo(f"  Prebuilt binary needs glibc 2.34+, this machine has {glibc_ver}.")
+        click.echo("  Building from source instead...")
+        return _install_llamacpp_source(prefix)
+
+
+def _install_llamacpp_prebuilt(prefix: Path) -> Path:
+    """Download prebuilt llama.cpp binaries from GitHub releases."""
     system = platform.system().lower()
     machine = platform.machine().lower()
 
@@ -140,7 +164,7 @@ def install_llamacpp(prefix: Path) -> Path:
         size_mb = asset["size"] / 1e6
         click.echo(f"  Downloading {asset['name']} ({size_mb:.0f} MB)...")
 
-        dest_dir = prefix / "lib" / "llama.cpp"
+        dest_dir = prefix / "lib" / "llama.cpp" / "prebuilt"
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
@@ -156,16 +180,14 @@ def install_llamacpp(prefix: Path) -> Path:
 
     tmp_path.unlink()
 
-    # Find the llama-server binary (could be in a nested directory or at top level)
+    # Find the llama-server binary
     server = None
     for candidate in dest_dir.rglob("llama-server"):
         if candidate.is_file():
             server = candidate
             break
     if not server:
-        raise RuntimeError(
-            f"llama-server binary not found in extracted archive at {dest_dir}"
-        )
+        raise RuntimeError(f"llama-server not found in extracted archive at {dest_dir}")
     server.chmod(server.stat().st_mode | stat.S_IEXEC)
 
     # Symlink into prefix/bin for PATH discovery
@@ -176,11 +198,68 @@ def install_llamacpp(prefix: Path) -> Path:
         link.unlink()
     link.symlink_to(server)
 
-    # llama-server needs its shared libs at runtime
     click.echo(f"  llama-server installed: {server}")
-    click.echo(f"  Symlinked: {link}")
-    click.echo(f"  NOTE: shared libraries live in {dest_dir}; llama-server finds them via rpath.")
     return dest_dir
+
+
+def _install_llamacpp_source(prefix: Path) -> Path:
+    """Build llama.cpp from source (for systems with glibc < 2.34)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        click.echo(f"  Cloning llama.cpp to {tmpdir}...")
+        clone = subprocess.run(
+            ["git", "clone", "--depth", "1", "https://github.com/ggml-org/llama.cpp.git", tmpdir],
+            capture_output=True, text=True, timeout=180,
+        )
+        if clone.returncode != 0:
+            raise RuntimeError(f"git clone failed: {clone.stderr.strip()[:200]}")
+
+        click.echo("  Building (cmake + make, CPU-only, this takes a few minutes)...")
+        cmake = subprocess.run(
+            ["cmake", "-B", "build", "-DGGML_CUDA=OFF", "-DGGML_BLAS=OFF",
+             "-DCMAKE_BUILD_TYPE=Release"],
+            cwd=tmpdir, capture_output=True, text=True, timeout=120,
+        )
+        if cmake.returncode != 0:
+            raise RuntimeError(f"cmake configure failed: {cmake.stderr.strip()[:200]}")
+
+        build = subprocess.run(
+            ["cmake", "--build", "build", "--config", "Release", "-j",
+             "--target", "llama-server"],
+            cwd=tmpdir, timeout=600,
+        )
+        if build.returncode != 0:
+            raise RuntimeError("Build failed. See output above.")
+
+        # Install: copy binary + shared libs
+        dest_dir = prefix / "lib" / "llama.cpp" / "local"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        build_bin = Path(tmpdir) / "build" / "bin"
+        server_bin = build_bin / "llama-server"
+        if not server_bin.exists():
+            raise RuntimeError(f"llama-server not found at {server_bin}")
+
+        # Copy binary
+        shutil.copy2(str(server_bin), str(dest_dir / "llama-server"))
+        # Copy shared libs
+        for so in build_bin.glob("lib*.so*"):
+            shutil.copy2(str(so), str(dest_dir))
+
+        # Create a wrapper script that sets LD_LIBRARY_PATH
+        bin_dir = prefix / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        wrapper = bin_dir / "llama-server"
+        wrapper.write_text(
+            f"#!/bin/bash\n"
+            f"export LD_LIBRARY_PATH={dest_dir}:$LD_LIBRARY_PATH\n"
+            f"exec {dest_dir}/llama-server \"$@\"\n"
+        )
+        wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
+
+        click.echo(f"  llama-server built and installed: {dest_dir}/llama-server")
+        return dest_dir
 
 
 def install_ktransformers() -> None:
@@ -303,9 +382,17 @@ def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path
             shutil.move(str(item), str(dest))
         nested.rmdir()
 
-    n_files = len(list(dest.glob("*.gguf")))
+    # Find the first GGUF shard — llama-server needs a file path, not a directory
+    gguf_files = sorted(dest.glob("*.gguf"))
+    if not gguf_files:
+        click.echo(f"  WARNING: no .gguf files found in {dest}")
+        click.echo("  0 GGUF shards downloaded.")
+        return dest
+
+    n_files = len(gguf_files)
+    first_shard = str(gguf_files[0])
     click.echo(f"  {n_files} GGUF shards downloaded.")
-    return dest
+    return Path(first_shard)
 
 
 # ---------------------------------------------------------------------------

@@ -1,14 +1,16 @@
 # litmoe - OpenAI-compatible gateway stack
 #
-# After: docker compose up -d
-# Visit http://<your-ip>:8080 for Open WebUI
+# After: docker compose up -d --build
+# Visit http://<your-ip>:3000 for Open WebUI
+# API at http://<your-ip>:8080/v1
 #
 # Prerequisites:
 #   1. Copy models.yaml.example to models.yaml and edit model paths
-#   2. Have at least one engine installed (kt-kernel or llama-server)
+#   2. Model weights downloaded via: litmoe install --model <name>
+#   3. Model weights at ~/.litmoe/models/ (mounted to /models in container)
 
 services:
-  # Main gateway: routes requests to engines
+  # Main gateway: routes requests to engines (llama.cpp built into image)
   litmoe-gateway:
     build:
       context: ..
@@ -20,40 +22,31 @@ services:
     volumes:
       - ./models.yaml:/config/models.yaml:ro
       - ./logs:/app/logs
-      # Mount model checkpoints here, e.g.:
-      # - /data/models:/models:ro
+      - /home/chaz/.litmoe/models:/models:ro
+    environment:
+      - LITMOE_CONFIG=/config/models.yaml
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
 
-  # Caddy: optional reverse proxy with TLS
-  caddy:
-    image: caddy:2-alpine
-    container_name: litmoe-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
-  # Open WebUI: web UI for chatting
+  # Open WebUI: web UI for chatting with models
   openwebui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: litmoe-openwebui
     restart: unless-stopped
+    ports:
+      - "3000:8080"
     volumes:
       - openwebui_data:/app/backend/data
     environment:
       - OPENAI_API_BASE_URL=http://litmoe-gateway:8080/v1
       - OPENAI_API_KEY=sk-litmoe
-      - WEBUI_AUTH=false  # set true in production
+      - WEBUI_AUTH=false
+    depends_on:
+      litmoe-gateway:
+        condition: service_healthy
 
 volumes:
-  caddy_data:
-  caddy_config:
   openwebui_data:

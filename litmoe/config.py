@@ -23,7 +23,7 @@ class ModelEntry(BaseModel):
 
 class GatewayConfig(BaseModel):
     """Top-level litmoe configuration."""
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 8080
     api_key: str | None = None
     models: list[ModelEntry] = Field(default_factory=list)
