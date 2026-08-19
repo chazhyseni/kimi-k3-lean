@@ -14,6 +14,7 @@ import yaml
 from litmoe import __version__
 from litmoe.config import GatewayConfig, load_config, default_config_path
 from litmoe.engines import kt_installed, llama_installed
+from litmoe.cli.install import install_cmd
 
 
 @click.group()
@@ -235,6 +236,9 @@ def stop():
                     pass
     if not found:
         click.echo("  No engine processes found")
+
+
+cli.add_command(install_cmd)
 
 
 def main():

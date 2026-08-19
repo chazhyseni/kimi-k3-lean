@@ -1,11 +1,8 @@
 """ktransformers engine adapter.
 
-ktransformers is the engine for models it explicitly supports.
-It auto-detects:
-- GPU: uses sglang-kt for CUDA-accelerated heterogeneous inference
-- CPU AMX: uses AMX kernels (Intel Xeon 4th gen+)
-- CPU AVX512: uses AVX512 kernels
-- CPU AVX2: uses llamafile backend (universal CPU compatibility)
+Heterogeneous CPU+GPU MoE inference with expert offloading.
+Backends: CUDA (sglang-kt), AMX (Intel Xeon 4th gen+), AVX-512, AVX2.
+Supported model families: DeepSeek-V3/R1, GLM-5.x, MiniMax-M2.x, Kimi-K2.x, Qwen3.
 
 Reference: https://github.com/kvcache-ai/ktransformers
 """

@@ -10,7 +10,7 @@ on most hardware. The HuggingFace checkpoint is 1.45 TB. To run interactively
 you need either:
 
 1. **A GPU machine**: A single H100 ($25k-$40k) gets you 5-15 tokens/second.
-2. **More RAM than disk** is cheap: 1 TB DDR4 lets you hold the model in memory.
+2. **More RAM than disk is cheap:** 1 TB DDR4 lets you hold the model in memory.
 3. **Local NVMe** (7 GB/s vs 379 MB/s cloud disk) makes cold-cache fast.
 4. **An engine that supports your hardware**: ktransformers for AMX/AVX-512/AVX2
    + CUDA, llama.cpp for CUDA/HIP/Metal/Vulkan.
@@ -58,8 +58,8 @@ between these engines is healthy. Reimplementing kernels loses to both.
 
 **Configuration is the hard part.** Users don't care which engine is running;
 they care which model responds. The dispatcher lets a single `models.yaml`
-mix engines: kimi-k3 → ktransformers (works there), deepseek-v3 → llama.cpp
-(if ktransformers doesn't support it yet), tiny test model → ktransformers
+mix engines: kimi-k3 → llama.cpp (native GGUF support), deepseek-v3 →
+ktransformers (native AMX/AVX optimization), tiny test model → ktransformers
 CPU. The user writes `model: kimi-k3` and gets a response.
 
 **Inference is hardware-bound, not software-bound.** The previous "optimization"
@@ -118,7 +118,9 @@ litmoe/
 │   │   ├── base.py         # Engine abstract base
 │   │   ├── ktransformers.py  # kt run subprocess adapter
 │   │   └── llamacpp.py     # llama-server subprocess adapter
-│   └── cli/main.py         # litmoe doctor|init|serve|status|stop
+│   └── cli/
+│       ├── main.py         # litmoe doctor|init|install|serve|status|stop
+│       └── install.py      # one-command engine + model installer
 ├── examples/
 │   └── models.yaml         # engine routes
 ├── deploy/

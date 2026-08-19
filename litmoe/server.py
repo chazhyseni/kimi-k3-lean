@@ -94,22 +94,22 @@ class Gateway:
         # Translate Anthropic Messages → OpenAI Chat Completions
         if anthropic:
             payload = _anthropic_to_openai(payload)
-
-        # Forward
-        target_url = f"{engine.base_url}/v1/{endpoint}"
-        if anthropic:
             target_url = f"{engine.base_url}/v1/chat/completions"
+        else:
+            target_url = f"{engine.base_url}/v1/{endpoint}"
 
+        # Use translated payload if anthropic, otherwise original body
+        send_body = json.dumps(payload).encode() if anthropic else body
         stream = payload.get("stream", False)
         timeout = httpx.Timeout(connect=10.0, read=None, write=600.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if stream:
                 return StreamingResponse(
-                    _stream_response(client, target_url, body),
+                    _stream_response(client, target_url, send_body),
                     media_type="text/event-stream",
                 )
             else:
-                r = await client.post(target_url, content=body, headers={"content-type": "application/json"})
+                r = await client.post(target_url, content=send_body, headers={"content-type": "application/json"})
                 return JSONResponse(content=r.json(), status_code=r.status_code)
 
     def load_engines(self, log_dir: str | None = None) -> None:

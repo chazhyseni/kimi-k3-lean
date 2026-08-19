@@ -1,12 +1,8 @@
 """llama.cpp engine adapter.
 
-llama.cpp is the engine for models ktransformers doesn't support yet.
-It has native support for Kimi-K3, Qwen3.5 MoE, and many others via GGUF.
-
-Use it when:
-- ktransformers doesn't support the model yet
-- You want maximum compatibility (CUDA/HIP/Metal/Vulkan/SYCL)
-- You're working with GGUF quantized models
+Native support for Kimi-K3, Qwen3.5 MoE, and many other architectures via GGUF.
+Backends: CUDA, HIP (AMD), Metal (Apple), Vulkan, SYCL, OpenCL, CANN (Ascend).
+Quantization: 1.5/2/3/4/5/6/8-bit. SIMD: AVX, AVX2, AVX-512, AMX.
 
 Reference: https://github.com/ggml-org/llama.cpp
 """

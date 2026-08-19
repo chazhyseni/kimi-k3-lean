@@ -124,6 +124,7 @@ Per-model fields: `id` (name clients use), `engine` (`ktransformers` or `llamacp
 ```bash
 litmoe doctor          # Check CPU/GPU/RAM, engine availability, get a recommendation
 litmoe init            # Create models.yaml
+litmoe install         # Install engines and/or download model weights
 litmoe serve           # Start gateway + all configured engines
 litmoe status          # Show gateway health and per-engine status
 litmoe stop            # SIGTERM all engine subprocesses
