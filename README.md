@@ -2,15 +2,16 @@
 
 **lit + MoE** — a light gateway for Mixture-of-Experts models.
 
-OpenAI-compatible gateway for [ktransformers](https://github.com/kvcache-ai/ktransformers) and [llama.cpp](https://github.com/ggml-org/llama.cpp). CPU+GPU hybrid MoE inference orchestration.
+OpenAI-compatible gateway for [ktransformers](https://github.com/kvcache-ai/ktransformers) and [llama.cpp](https://github.com/ggml-org/llama.cpp). Run trillion-parameter MoE models behind a single API.
 
-litmoe is **not an inference engine**. It is a ~1100-line Python package that:
-- Reads a `models.yaml` config
-- Starts the configured engines as subprocesses
-- Forwards OpenAI/Anthropic-format requests to the right engine by model name
-- Exposes everything at `http://127.0.0.1:8080/v1`
+litmoe is not an inference engine — the forward pass runs in ktransformers or llama.cpp. What litmoe adds:
 
-The actual inference is done by ktransformers or llama.cpp. litmoe adds nothing to the forward pass.
+- **One API for multiple engines.** Mix ktransformers and llama.cpp in the same `models.yaml`. Clients see one flat model list at one endpoint. No multiple ports, no multiple clients.
+- **Anthropic Messages API.** `/v1/messages` is translated to OpenAI chat completions, so Claude Code, Hermes Agent, and other Anthropic-format tools work without changes.
+- **One-command install.** `litmoe install --model kimi-k3` downloads the GGUF, installs llama.cpp, and writes the config entry. No manual HuggingFace repo hunting, shard counting, or launch scripts.
+- **Hardware-aware setup.** `litmoe doctor` detects CPU instruction sets (AVX2/AVX-512/AMX), RAM, and GPU, then recommends which engine to use.
+- **Engine lifecycle.** Subprocess supervision with health checks, clean shutdown via process groups, per-engine log files, and per-model environment/CLI flag passthrough.
+- **Streaming.** Full SSE streaming passthrough for both OpenAI and Anthropic request formats.
 
 ---
 
@@ -221,9 +222,9 @@ Services: **litmoe-gateway** (port 8080), **caddy** (optional TLS proxy), **open
 
 ## What litmoe does NOT do
 
-- It is not an inference engine. No model weights, no forward-pass code, no kernels.
-- It does not quantize models. Use `llama-quantize`, Unsloth, or download pre-quantized GGUFs.
-- It does not parallelize across machines. Single-node only.
+- No inference code. No model weights, no kernels, no quantization. The engines do all compute.
+- No multi-node distribution. Single-node only.
+- No model conversion. Use `llama-quantize`, Unsloth, or download pre-quantized GGUFs.
 
 ---
 
