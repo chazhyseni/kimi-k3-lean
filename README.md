@@ -4,7 +4,7 @@
 
 OpenAI-compatible gateway for [ktransformers](https://github.com/kvcache-ai/ktransformers) and [llama.cpp](https://github.com/ggml-org/llama.cpp). CPU+GPU hybrid MoE inference orchestration.
 
-litmoe is **not an inference engine**. It is a ~780-line Python package that:
+litmoe is **not an inference engine**. It is a ~1100-line Python package that:
 - Reads a `models.yaml` config
 - Starts the configured engines as subprocesses
 - Forwards OpenAI/Anthropic-format requests to the right engine by model name

@@ -4,7 +4,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy and install the litmoe package
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 COPY litmoe/ litmoe/
 RUN pip install --no-cache-dir -e .
 

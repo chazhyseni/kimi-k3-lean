@@ -72,8 +72,8 @@
   <line x1="900" y1="430" x2="1050" y2="490" class="arrow"/>
   <polygon points="345,488 355,488 350,498" fill="#6e7681"/>
   <polygon points="1045,488 1055,488 1050,498" fill="#6e7681"/>
-  <text x="220" y="465" class="arrow-text">model: kimi-k3</text>
-  <text x="900" y="465" class="arrow-text">model: kimi-k3-q2</text>
+  <text x="220" y="465" class="arrow-text">model: deepseek-v3</text>
+  <text x="900" y="465" class="arrow-text">model: kimi-k3</text>
 
   <!-- ENGINES layer -->
   <rect x="80" y="500" width="600" height="320" rx="12" fill="#1a0d1d" stroke="#a371f7" stroke-width="2"/>
@@ -141,9 +141,9 @@
     <text x="110" y="950">host: 127.0.0.1</text>
     <text x="110" y="970">port: 8080</text>
     <text x="110" y="990">models:</text>
-    <text x="130" y="1010">- id: kimi-k3</text>
+    <text x="130" y="1010">- id: deepseek-v3</text>
     <text x="160" y="1030">engine: ktransformers</text>
-    <text x="160" y="1050">model_path: /data/k3</text>
+    <text x="160" y="1050">model_path: /data/ds3</text>
   </g>
 
   <rect x="720" y="870" width="600" height="200" rx="12" fill="#0a1420" stroke="#58a6ff" stroke-width="2"/>
@@ -153,10 +153,11 @@
   <g font-family="SF Mono, Monaco, Consolas, monospace" font-size="13" fill="#c9d1d9">
     <text x="750" y="950">litmoe doctor         # CPU/GPU/RAM + engine check</text>
     <text x="750" y="972">litmoe init           # create models.yaml</text>
-    <text x="750" y="994">litmoe serve          # start gateway + engines</text>
-    <text x="750" y="1016">litmoe status         # poll /health</text>
-    <text x="750" y="1038">litmoe stop           # SIGTERM all engines</text>
-    <text x="750" y="1060">litmoe --version      # show version</text>
+    <text x="750" y="994">litmoe install        # install engines + download models</text>
+    <text x="750" y="1016">litmoe serve          # start gateway + engines</text>
+    <text x="750" y="1038">litmoe status         # poll /health</text>
+    <text x="750" y="1060">litmoe stop           # SIGTERM all engines</text>
+    <text x="750" y="1082">litmoe --version      # show version</text>
   </g>
 
   <!-- Legend -->

@@ -32,7 +32,7 @@ The litmoe gateway is intentionally minimal. Every component earns its place.
    │   │   - if Anthropic endpoint: translate Messages→ChatCompletions      │     │
    │   └─────────────────────────────────────────────────────────────────────┘     │
    │                                                                                │
-   │   litmoe/server.py   ·   ~215 lines FastAPI pass-through                        │
+   │   litmoe/server.py   ·   ~215 lines FastAPI pass-through                         │
    │                                                                                │
    └────────────┬───────────────────────────────────────┬───────────────────────────┘
                 │                                       │
