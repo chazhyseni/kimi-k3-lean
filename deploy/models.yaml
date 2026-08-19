@@ -1,9 +1,9 @@
 # litmoe models.yaml for Docker deployment
-# Model paths are relative to the container's /models mount point.
-# The compose file mounts ~/.litmoe/models to /models in the gateway container.
+# Gateway listens on port 8000 internally (exposed to Docker network only).
+# Open WebUI on port 8080 externally, connects to gateway at litmoe-gateway:8000.
 
 host: 0.0.0.0
-port: 8080
+port: 8000
 api_key: null
 
 models:
