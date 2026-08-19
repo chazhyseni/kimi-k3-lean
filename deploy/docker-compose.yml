@@ -42,8 +42,10 @@ services:
       - openwebui_data:/app/backend/data
     environment:
       - OPENAI_API_BASE_URL=http://litmoe-gateway:8000/v1
+      - OPENAI_API_BASE_URLS=http://litmoe-gateway:8000/v1
       - OPENAI_API_KEY=sk-litmoe
       - WEBUI_AUTH=false
+      - ENABLE_OPENAI_API=true
     depends_on:
       litmoe-gateway:
         condition: service_healthy
