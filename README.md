@@ -1,5 +1,7 @@
 # litmoe
 
+**lit + MoE** — a light gateway for Mixture-of-Experts models.
+
 OpenAI-compatible gateway for [ktransformers](https://github.com/kvcache-ai/ktransformers) and [llama.cpp](https://github.com/ggml-org/llama.cpp). CPU+GPU hybrid MoE inference orchestration.
 
 litmoe is **not an inference engine**. It is a ~780-line Python package that:
