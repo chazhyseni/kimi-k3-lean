@@ -37,7 +37,7 @@ Trillion-parameter MoE models (Kimi K3, Qwen3.8-2.4T, DeepSeek-V3) are open weig
 **Paper:** SOSP 2025 — "KTransformers: Unleashing the Full Potential of CPU/GPU Hybrid Inference for MoE Models"
 
 - **GPU offloading:** Hot experts on GPU, cold experts on CPU
-- **CPU kernels:** AMX (Intel Xeon 4th gen+), AVX-512, AVX2 (universal fallback)
+- **CPU kernels:** AMX (Intel Xeon 4th gen+), AVX-512, AVX2 (broad CPU compatibility)
 - **Native precision:** BF16, FP8, AMXINT4/INT8
 - **AVX2-only CPU backend** — works on AMD EPYC
 - **Supported model families:** DeepSeek-V3/R1, GLM-5.x, MiniMax-M2.x, Kimi-K2.x, Qwen3, SmallThinker (see their model registry)

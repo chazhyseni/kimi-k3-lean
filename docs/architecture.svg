@@ -78,7 +78,7 @@
   <!-- ENGINES layer -->
   <rect x="80" y="500" width="600" height="320" rx="12" fill="#1a0d1d" stroke="#a371f7" stroke-width="2"/>
   <text x="380" y="530" text-anchor="middle" class="section-title">ktransformers engine</text>
-  <text x="380" y="548" text-anchor="middle" class="box-text-mono">spawned by: kt run · default port :30000</text>
+  <text x="380" y="548" text-anchor="middle" class="box-text-mono">spawned by: kt run · default port :10002</text>
 
   <!-- ktransformers inner -->
   <rect x="110" y="570" width="260" height="120" rx="6" fill="#161b22" stroke="#30363d"/>

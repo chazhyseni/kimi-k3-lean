@@ -115,8 +115,9 @@ def init():
         sys.exit(1)
 
     # Detect engines
-    # For Kimi-K3 and Qwen3.8, llama.cpp is the engine (ktransformers doesn't support them yet)
-    # For DeepSeek, MiniMax, GLM, etc., ktransformers is the engine
+    # Both engines are first-class — pick based on what's installed.
+    # ktransformers supports DeepSeek-V3, GLM, Kimi-K2, Qwen3, MiniMax.
+    # llama.cpp supports Kimi-K3, Qwen3.8, and many more via GGUF.
     if llama_installed():
         engine = "llamacpp"
     elif kt_installed():

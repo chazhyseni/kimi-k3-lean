@@ -36,14 +36,14 @@ The litmoe gateway is intentionally minimal. Every component earns its place.
    │                                                                                │
    └────────────┬───────────────────────────────────────┬───────────────────────────┘
                 │                                       │
-                │ http (model name = kimi-k3)           │ http (model name = kimi-k3-q2)
+                │ http (model name = deepseek-v3)   │ http (model name = kimi-k3)
                 ▼                                       ▼
    ┌─────────────────────────────┐    ┌────────────────────────────────┐
    │   KTRANSFORMERS ENGINE      │    │   LLAMA.CPP ENGINE             │
    │   ────────────────────────  │    │   ─────────────────────────    │
    │                             │    │                                │
    │   spawned by: kt run        │    │   spawned by: llama-server     │
-   │   listens on: :30000        │    │   listens on: :8081            │
+   │   listens on: :10002       │    │   listens on: :8081            │
    │                             │    │                                │
    │   ┌───────────────────────┐ │    │   ┌───────────────────────────┐ │
    │   │  GPU backend          │ │    │   │  CUDA / HIP / Metal /     │ │
@@ -60,7 +60,7 @@ The litmoe gateway is intentionally minimal. Every component earns its place.
    │   │                       │ │    │   │  via GGUF format          │ │
    │   │  Auto-detects:        │ │    │   │                           │ │
    │   │  AMX / AVX-512 / AVX2 │ │    │   │  See llama.cpp quant      │ │
-   │   │  Llamafile fallback   │ │    │   │  tools for conversion     │ │
+   │   │  broad CPU support    │ │    │   │  tools for conversion     │ │
    │   └───────────────────────┘ │    │   └───────────────────────────┘ │
    │                             │    │                                │
    │   via: litmoe/engines/      │    │   via: litmoe/engines/         │
@@ -80,12 +80,12 @@ The litmoe gateway is intentionally minimal. Every component earns its place.
                    │   port: 8080                │
                    │   api_key: null             │
                    │   models:                   │
-                   │     - id: kimi-k3           │
+                   │     - id: deepseek-v3       │
                    │       engine: ktransformers │
-                   │       model_path: /data/k3  │
-                   │     - id: kimi-k3-q2        │
+                   │       model_path: /data/ds3 │
+                   │     - id: kimi-k3           │
                    │       engine: llamacpp      │
-                   │       gguf_path: /data/k3.gguf
+                   │       model_path: /data/k3  │
                    │                              │
                    └──────────────────────────────┘
 ```
@@ -94,8 +94,8 @@ The litmoe gateway is intentionally minimal. Every component earns its place.
 
 1. Client sends `POST /v1/chat/completions` with `model: kimi-k3`.
 2. Gateway parses the body, looks up `kimi-k3` in `models.yaml`.
-3. Gateway forwards the request to the ktransformers engine on port 30000.
-4. ktransformers runs the forward pass (GPU or CPU).
+3. Gateway forwards the request to the llama.cpp engine on port 8081.
+4. llama.cpp runs the forward pass (GPU or CPU).
 5. Gateway streams the response back to the client.
 
 The gateway never touches the forward pass. It adds single-digit-millisecond
@@ -113,6 +113,6 @@ latency per request and zero compute.
 | Service | Default port | Configurable |
 |---|---|---|
 | Gateway | 8080 | `port` in models.yaml |
-| ktransformers | 30000 | `default_port()` in ktransformers.py |
+| ktransformers | 10002 | `default_port()` in ktransformers.py |
 | llama.cpp | 8081 | `default_port()` in llamacpp.py |
 | Open WebUI | 8080 (via Caddy) | `HTTP_PORT` in .env |
