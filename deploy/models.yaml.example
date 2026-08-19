@@ -1,0 +1,24 @@
+# litmoe models.yaml — example configuration
+# Copy this to models.yaml and edit the paths to your model checkpoints.
+
+host: 127.0.0.1
+port: 8080
+api_key: null   # or a string to require Bearer auth
+
+models:
+  # Example: ktransformers engine
+  # - id: kimi-k3
+  #   engine: ktransformers
+  #   model_path: /data/kimi-k3
+  #   n_gpu_layers: -1     # -1 = all, 0 = CPU only
+  #   n_ctx: 8192
+
+  # Example: llama.cpp engine
+  # - id: kimi-k3-quant
+  #   engine: llamacpp
+  #   gguf_path: /data/kimi-k3-UD-Q2_0.gguf
+  #   n_gpu_layers: -1
+  #   n_ctx: 8192
+
+  # Empty list = gateway starts but no models are loaded
+  # Add your models above

@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1100" font-family="-apple-system, system-ui, 'Segoe UI', Roboto, sans-serif">
+  <style>
+    .title { font-size: 32px; font-weight: 700; fill: #e6edf3; }
+    .subtitle { font-size: 16px; fill: #9da7b3; }
+    .section-title { font-size: 18px; font-weight: 700; fill: #e6edf3; }
+    .box-title { font-size: 16px; font-weight: 700; fill: #e6edf3; }
+    .box-text { font-size: 13px; fill: #c9d1d9; }
+    .box-text-mono { font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 12px; fill: #c9d1d9; }
+    .mono { font-family: 'SF Mono', Monaco, Consolas, monospace; }
+    .arrow { stroke: #6e7681; stroke-width: 2; fill: none; }
+    .arrow-text { font-size: 12px; fill: #8b949e; }
+    .dashed { stroke-dasharray: 6 4; }
+  </style>
+
+  <!-- Background -->
+  <rect width="1400" height="1100" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="700" y="50" text-anchor="middle" class="title">litmoe Architecture</text>
+  <text x="700" y="75" text-anchor="middle" class="subtitle">OpenAI-compatible gateway for ktransformers and llama.cpp · no inference code in this repo</text>
+
+  <!-- CLIENTS layer -->
+  <rect x="80" y="120" width="1240" height="80" rx="12" fill="#0d2818" stroke="#2ea043" stroke-width="2"/>
+  <text x="700" y="155" text-anchor="middle" class="section-title">Clients</text>
+  <text x="700" y="180" text-anchor="middle" class="box-text">
+    Hermes Agent · Claude Code · Open WebUI · aider · Continue.dev · curl · Python · any OpenAI/Anthropic SDK
+  </text>
+
+  <!-- Vertical arrow down to gateway -->
+  <line x1="700" y1="200" x2="700" y2="240" class="arrow"/>
+  <polygon points="695,238 705,238 700,250" fill="#6e7681"/>
+  <text x="710" y="225" class="arrow-text">POST /v1/chat/completions · /v1/messages · /v1/completions · GET /v1/models</text>
+
+  <!-- GATEWAY layer -->
+  <rect x="80" y="250" width="1240" height="180" rx="12" fill="#1c1917" stroke="#d29922" stroke-width="2"/>
+  <text x="110" y="285" class="section-title">litmoe Gateway</text>
+  <text x="110" y="305" class="box-text-mono">litmoe/server.py · FastAPI + uvicorn · ~215 lines</text>
+
+  <!-- Routes inside gateway -->
+  <rect x="110" y="325" width="220" height="80" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="220" y="350" text-anchor="middle" class="box-title">/v1/models</text>
+  <text x="220" y="370" text-anchor="middle" class="box-text-mono">list configured models</text>
+  <text x="220" y="388" text-anchor="middle" class="box-text-mono">+ engine field</text>
+
+  <rect x="350" y="325" width="220" height="80" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="460" y="350" text-anchor="middle" class="box-title">/health</text>
+  <text x="460" y="370" text-anchor="middle" class="box-text-mono">engine running?</text>
+  <text x="460" y="388" text-anchor="middle" class="box-text-mono">PID, port, log path</text>
+
+  <rect x="590" y="325" width="220" height="80" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="700" y="350" text-anchor="middle" class="box-title">/v1/chat/completions</text>
+  <text x="700" y="370" text-anchor="middle" class="box-text-mono">OpenAI format</text>
+  <text x="700" y="388" text-anchor="middle" class="box-text-mono">streaming + non-streaming</text>
+
+  <rect x="830" y="325" width="220" height="80" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="940" y="350" text-anchor="middle" class="box-title">/v1/messages</text>
+  <text x="940" y="370" text-anchor="middle" class="box-text-mono">Anthropic format</text>
+  <text x="940" y="388" text-anchor="middle" class="box-text-mono">translated → OpenAI</text>
+
+  <rect x="1070" y="325" width="220" height="80" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="1180" y="350" text-anchor="middle" class="box-title">/v1/completions</text>
+  <text x="1180" y="370" text-anchor="middle" class="box-text-mono">legacy completion</text>
+  <text x="1180" y="388" text-anchor="middle" class="box-text-mono">pass-through</text>
+
+  <!-- Note box inside gateway -->
+  <rect x="350" y="430" width="940" height="0" fill="none"/>
+  <text x="900" y="430" text-anchor="middle" class="box-text">request body forwarded to engine.base_url/v1/...  ·  latency added: ~1-5 ms</text>
+
+  <!-- Vertical arrows to engines -->
+  <line x1="900" y1="430" x2="350" y2="490" class="arrow"/>
+  <line x1="900" y1="430" x2="1050" y2="490" class="arrow"/>
+  <polygon points="345,488 355,488 350,498" fill="#6e7681"/>
+  <polygon points="1045,488 1055,488 1050,498" fill="#6e7681"/>
+  <text x="220" y="465" class="arrow-text">model: kimi-k3</text>
+  <text x="900" y="465" class="arrow-text">model: kimi-k3-q2</text>
+
+  <!-- ENGINES layer -->
+  <rect x="80" y="500" width="600" height="320" rx="12" fill="#1a0d1d" stroke="#a371f7" stroke-width="2"/>
+  <text x="380" y="530" text-anchor="middle" class="section-title">ktransformers engine</text>
+  <text x="380" y="548" text-anchor="middle" class="box-text-mono">spawned by: kt run · default port :30000</text>
+
+  <!-- ktransformers inner -->
+  <rect x="110" y="570" width="260" height="120" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="240" y="595" text-anchor="middle" class="box-title">GPU backend (sglang-kt)</text>
+  <text x="240" y="615" text-anchor="middle" class="box-text">hot experts → VRAM</text>
+  <text x="240" y="633" text-anchor="middle" class="box-text">cold experts → CPU</text>
+  <text x="240" y="651" text-anchor="middle" class="box-text">async offload scheduler</text>
+  <text x="240" y="669" text-anchor="middle" class="box-text">3-layer (GPU-CPU-Disk)</text>
+  <text x="240" y="687" text-anchor="middle" class="box-text-mono">5-50 t/s typical</text>
+
+  <rect x="390" y="570" width="260" height="120" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="520" y="595" text-anchor="middle" class="box-title">CPU backend (kt-kernel)</text>
+  <text x="520" y="615" text-anchor="middle" class="box-text">auto-detects:</text>
+  <text x="520" y="633" text-anchor="middle" class="box-text">· AMX (Intel Sapphire+)</text>
+  <text x="520" y="651" text-anchor="middle" class="box-text">· AVX-512 (Skylake+)</text>
+  <text x="520" y="669" text-anchor="middle" class="box-text">· AVX2 (universal)</text>
+  <text x="520" y="687" text-anchor="middle" class="box-text-mono">0.5-1 t/s K3 on AVX2</text>
+
+  <rect x="110" y="710" width="540" height="92" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="380" y="735" text-anchor="middle" class="box-title">pip install kt-kernel</text>
+  <text x="380" y="755" text-anchor="middle" class="box-text-mono">CPU: one line · GPU: pip install kt-kernel sglang-kt</text>
+  <text x="380" y="773" text-anchor="middle" class="box-text">repo: github.com/kvcache-ai/ktransformers (MADSys Lab / Approaching.AI, SOSP 2025)</text>
+  <text x="380" y="791" text-anchor="middle" class="box-text">MiniMax-M3 day-0 (June 2026) · Kimi-K2.5 native (Jan 2026)</text>
+
+  <rect x="700" y="500" width="620" height="320" rx="12" fill="#1a0d12" stroke="#db61a2" stroke-width="2"/>
+  <text x="1010" y="530" text-anchor="middle" class="section-title">llama.cpp engine</text>
+  <text x="1010" y="548" text-anchor="middle" class="box-text-mono">spawned by: llama-server · default port :8081</text>
+
+  <rect x="730" y="570" width="280" height="120" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="870" y="595" text-anchor="middle" class="box-title">Backends</text>
+  <text x="870" y="615" text-anchor="middle" class="box-text">CUDA · HIP (AMD) · Metal (Apple)</text>
+  <text x="870" y="633" text-anchor="middle" class="box-text">Vulkan · SYCL · CANN (Ascend)</text>
+  <text x="870" y="651" text-anchor="middle" class="box-text">CPU+GPU hybrid offload</text>
+  <text x="870" y="669" text-anchor="middle" class="box-text">--n-gpu-layers N (or 0 = CPU)</text>
+  <text x="870" y="687" text-anchor="middle" class="box-text-mono">1-30 t/s typical</text>
+
+  <rect x="1030" y="570" width="280" height="120" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="1170" y="595" text-anchor="middle" class="box-title">Quantization</text>
+  <text x="1170" y="615" text-anchor="middle" class="box-text">1.5 / 2 / 3 / 4 / 5 / 6 / 8-bit</text>
+  <text x="1170" y="633" text-anchor="middle" class="box-text">via GGUF format</text>
+  <text x="1170" y="651" text-anchor="middle" class="box-text">ex: Kimi-K3 UD-Q2_0 = 466 GB</text>
+  <text x="1170" y="669" text-anchor="middle" class="box-text">ex: Mixtral 8x7B Q4_K_M = 24 GB</text>
+  <text x="1170" y="687" text-anchor="middle" class="box-text-mono">Fits 24 GB consumer GPUs</text>
+
+  <rect x="730" y="710" width="580" height="92" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="1020" y="735" text-anchor="middle" class="box-title">build from source or pre-built release</text>
+  <text x="1020" y="755" text-anchor="middle" class="box-text-mono">cmake -B build -DGGML_CUDA=ON · cmake --build build</text>
+  <text x="1020" y="773" text-anchor="middle" class="box-text">repo: github.com/ggml-org/llama.cpp (ggml-org community, MIT)</text>
+  <text x="1020" y="791" text-anchor="middle" class="box-text">Most mature cross-platform LLM server</text>
+
+  <!-- Bottom: models.yaml and CLI -->
+  <line x1="700" y1="820" x2="700" y2="860" class="arrow"/>
+  <polygon points="695,858 705,858 700,868" fill="#6e7681"/>
+
+  <rect x="80" y="870" width="620" height="200" rx="12" fill="#1c2128" stroke="#30363d" stroke-width="2"/>
+  <text x="110" y="900" class="section-title">models.yaml</text>
+  <text x="110" y="922" class="box-text">read once at startup; drives engine selection</text>
+
+  <g font-family="SF Mono, Monaco, Consolas, monospace" font-size="13" fill="#c9d1d9">
+    <text x="110" y="950">host: 127.0.0.1</text>
+    <text x="110" y="970">port: 8080</text>
+    <text x="110" y="990">models:</text>
+    <text x="130" y="1010">- id: kimi-k3</text>
+    <text x="160" y="1030">engine: ktransformers</text>
+    <text x="160" y="1050">model_path: /data/k3</text>
+  </g>
+
+  <rect x="720" y="870" width="600" height="200" rx="12" fill="#0a1420" stroke="#58a6ff" stroke-width="2"/>
+  <text x="750" y="900" class="section-title">litmoe CLI</text>
+  <text x="750" y="920" class="box-text-mono">litmoe/cli/main.py · Click</text>
+
+  <g font-family="SF Mono, Monaco, Consolas, monospace" font-size="13" fill="#c9d1d9">
+    <text x="750" y="950">litmoe doctor         # CPU/GPU/RAM + engine check</text>
+    <text x="750" y="972">litmoe init           # create models.yaml</text>
+    <text x="750" y="994">litmoe serve          # start gateway + engines</text>
+    <text x="750" y="1016">litmoe status         # poll /health</text>
+    <text x="750" y="1038">litmoe stop           # SIGTERM all engines</text>
+    <text x="750" y="1060">litmoe --version      # show version</text>
+  </g>
+
+  <!-- Legend -->
+  <text x="80" y="1075" class="box-text" fill="#8b949e">ktransformers: github.com/kvcache-ai/ktransformers · MADSys Lab (Tsinghua) / Approaching.AI · SOSP 2025 · Apache 2.0 · litmoe: no inference code</text>
+
+</svg>

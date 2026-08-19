@@ -1,0 +1,59 @@
+# litmoe - OpenAI-compatible gateway stack
+#
+# After: docker compose up -d
+# Visit http://<your-ip>:8080 for Open WebUI
+#
+# Prerequisites:
+#   1. Copy models.yaml.example to models.yaml and edit model paths
+#   2. Have at least one engine installed (kt-kernel or llama-server)
+
+services:
+  # Main gateway: routes requests to engines
+  litmoe-gateway:
+    build:
+      context: ..
+      dockerfile: deploy/gateway/Dockerfile
+    container_name: litmoe-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models.yaml:/config/models.yaml:ro
+      - ./logs:/app/logs
+      # Mount model checkpoints here, e.g.:
+      # - /data/models:/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Caddy: optional reverse proxy with TLS
+  caddy:
+    image: caddy:2-alpine
+    container_name: litmoe-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Open WebUI: web UI for chatting
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: litmoe-openwebui
+    restart: unless-stopped
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      - OPENAI_API_BASE_URL=http://litmoe-gateway:8080/v1
+      - OPENAI_API_KEY=sk-litmoe
+      - WEBUI_AUTH=false  # set true in production
+
+volumes:
+  caddy_data:
+  caddy_config:
+  openwebui_data:

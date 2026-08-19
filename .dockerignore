@@ -1,0 +1,54 @@
+# .dockerignore — files NOT copied into the Docker build context.
+# This list is intentionally exhaustive; a missing line here means the
+# build context is larger than it needs to be.
+
+# Build artifacts (regenerated inside the container).
+build/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Git.
+.git/
+.gitattributes
+
+# Editor / OS metadata.
+.vscode/
+.idea/
+.cursor/
+.aider*
+.DS_Store
+
+# Logs.
+*.log
+logs/
+
+# Model weights (NEVER ship these; mount at runtime).
+*.safetensors
+*.gguf
+*.bin
+*.pth
+*.pt
+models/
+checkpoints/
+
+# Python cache.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets / creds.
+.env
+*.pem
+*_key
+*_key.pub
+hf_token*
+
+# CI / coverage.
+.github/
+.coverage
+htmlcov/

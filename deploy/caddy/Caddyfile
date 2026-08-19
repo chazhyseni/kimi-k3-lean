@@ -1,0 +1,6 @@
+# Caddyfile for litmoe
+
+:80 {
+    reverse_proxy litmoe-gateway:8080
+    encode zstd gzip
+}

@@ -1,0 +1,8 @@
+# Exclude downloaded weights from Docker build context.
+# Weights are mounted at runtime, never baked into the image.
+checkpoints/
+*.safetensors
+*.gguf
+*.bin
+*.pth
+*.pt

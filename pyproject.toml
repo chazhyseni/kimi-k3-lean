@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "litmoe"
+version = "0.1.0"
+description = "OpenAI-compatible gateway for ktransformers and llama.cpp. CPU+GPU hybrid MoE inference orchestration."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Chaz Hyseni", email = "chaz.hyseni@gmail.com"},
+]
+keywords = ["llm", "moe", "kimi-k3", "qwen3", "ktransformers", "llama.cpp", "inference", "openai-api"]
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "uvicorn>=0.29",
+    "fastapi>=0.111",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+ktransformers = ["kt-kernel>=0.5"]
+llamacpp = []
+all = ["kt-kernel>=0.5"]
+
+[project.scripts]
+litmoe = "litmoe.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["litmoe*"]

@@ -1,0 +1,9 @@
+version: 2
+# Disable dependabot auto-branch creation.
+# Previously it created per-update branches in dependabot/* which cluttered main.
+# Now it only opens PRs (which merge to main directly via squash and delete).
+# To permanently stop: enable only the ecosystems that won't break.
+
+updates: []
+# (Empty list disables ALL dependabot update creation. Re-add ecosystems
+#  only if you want them, and use the GitHub Actions UI to merge PRs.)
