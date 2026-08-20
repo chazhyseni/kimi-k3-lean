@@ -12,13 +12,13 @@ models:
   #   engine: llamacpp
   #   model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M   # 128 GB
   #   n_gpu_layers: -1     # -1 = all, 0 = CPU only
-  #   n_ctx: 32768
+  #   n_ctx: 65536
 
   # - id: kimi-k3
   #   engine: llamacpp
   #   model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S      # 594 GB
   #   n_gpu_layers: -1
-  #   n_ctx: 32768
+  #   n_ctx: 65536
 
   # Example: ktransformers engine (DeepSeek-V3, GLM, Kimi-K2, etc.)
   # - id: deepseek-v3

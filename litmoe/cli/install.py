@@ -480,7 +480,7 @@ def add_model_to_config(model_name: str, engine: str, model_path: Path,
               help="Where to store model weights (default: ~/.litmoe/models)")
 @click.option("--prefix", type=click.Path(), default=None,
               help="Install prefix for engine binaries (default: ~/.local)")
-@click.option("--n-ctx", default=32768, type=int, help="Context size written to models.yaml")
+@click.option("--n-ctx", default=65536, type=int, help="Context size written to models.yaml")
 @click.option("--config", "-c", type=click.Path(), default=None, help="Path to models.yaml")
 @click.option("--yes", is_flag=True, help="Skip confirmation prompts")
 def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, config, yes):
