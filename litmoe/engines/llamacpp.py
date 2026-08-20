@@ -123,6 +123,9 @@ class LlamaCppEngine(Engine):
         On macOS, sets BOTH DYLD_LIBRARY_PATH and DYLD_FALLBACK_LIBRARY_PATH.
         DYLD_FALLBACK_LIBRARY_PATH is NOT stripped by SIP for non-restricted
         (non-system) binaries, so it reliably makes shared libraries findable.
+
+        Also runs fix_macos_dylib_paths() at serve time to patch any existing
+        binary that was built before the fix was added to the install process.
         """
         cmd = self.build_command()
         env = os.environ.copy()
@@ -132,6 +135,13 @@ class LlamaCppEngine(Engine):
         lib_dir = getattr(self, "_lib_dir", None)
         if lib_dir:
             env.update(get_library_path_env(lib_dir))
+
+            # On macOS, fix dylib paths at serve time too — handles binaries
+            # that were built/installed before the fix was added
+            from litmoe.platform_utils import is_macos
+            if is_macos():
+                binary_path = Path(cmd[0])
+                fix_macos_dylib_paths(binary_path, Path(lib_dir))
 
         log_dir = log_dir or Path("logs")
         log_dir.mkdir(parents=True, exist_ok=True)
