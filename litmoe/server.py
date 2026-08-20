@@ -146,6 +146,31 @@ class Gateway:
                     model.id, model.n_ctx, new_ctx
                 )
                 model.n_ctx = new_ctx
+                # Also persist the fix to models.yaml so it doesn't need auto-fixing every run
+                try:
+                    import yaml as _yaml
+                    config_path = Path(_yaml.__file__).parent  # just to ensure yaml is imported
+                    from litmoe.config import load_config, GatewayConfig
+                    # Find the config file path
+                    import os
+                    cfg_path = os.environ.get("LITMOE_CONFIG")
+                    if not cfg_path:
+                        for candidate in ["models.yaml", "deploy/models.yaml", "config/models.yaml"]:
+                            if Path(candidate).exists():
+                                cfg_path = candidate
+                                break
+                    if cfg_path and Path(cfg_path).exists():
+                        with open(cfg_path) as f:
+                            raw = _yaml.safe_load(f)
+                        for m in raw.get("models", []):
+                            if m.get("id") == model.id:
+                                m["n_ctx"] = new_ctx
+                                break
+                        with open(cfg_path, "w") as f:
+                            _yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+                        logger.info("Persisted n_ctx=%d for %s to %s", new_ctx, model.id, cfg_path)
+                except Exception:
+                    pass  # best effort — runtime fix is what matters
             logger.info("Loading %s via %s...", model.id, model.engine)
             engine = make_engine(model)
             # Assign unique port: first model 8081, second 8082, etc.
