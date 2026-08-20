@@ -38,41 +38,40 @@ class LlamaCppEngine(Engine):
 
         Returns (binary_path, lib_dir) where lib_dir is the directory
         containing shared libraries (for env setup), or None if not needed.
+
+        Prefers the direct binary over wrapper scripts so that env vars
+        set by start() are passed directly to the process (not through
+        a bash wrapper that may overwrite or lose them).
         """
-        # First check PATH (may be a wrapper script that handles env vars)
+        prefix = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
+
+        # First: look for the direct binary in known install locations
+        # This is preferred over PATH discovery because:
+        # 1. Wrapper scripts on macOS may have been written by old code
+        #    that doesn't set DYLD_FALLBACK_LIBRARY_PATH
+        # 2. Direct binary + env vars from start() is more reliable
+        for lib_subdir in ["lib/llama.cpp/local", "lib/llama.cpp/prebuilt"]:
+            lib_dir = prefix / lib_subdir
+            direct = lib_dir / "llama-server"
+            if direct.exists():
+                return (str(direct), lib_dir)
+
+        # Second: check PATH (may find a wrapper script)
         found = shutil.which("llama-server") or shutil.which("llama-server.exe")
         if found:
-            # Check if it's a wrapper script or the actual binary
             p = Path(found)
-            # If it's a symlink or script, the actual binary and libs are nearby
-            prefix = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
-
-            # Look for lib dirs
             for lib_subdir in ["lib/llama.cpp/local", "lib/llama.cpp/prebuilt"]:
                 lib_dir = prefix / lib_subdir
                 if lib_dir.exists():
                     return (found, lib_dir)
-
-            # If the binary itself is in a directory with .so/.dylib files
             if any(p.parent.glob("lib*.so*")) or any(p.parent.glob("lib*.dylib*")):
                 return (found, p.parent)
-
             return (found, None)
 
-        # Not in PATH — search common install locations
-        prefix = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
-        binary = find_llama_server_binary(prefix)
-        if binary:
-            # The lib dir is where the binary lives (for source builds)
-            # or its parent (for prebuilt extracts)
-            lib_dir = binary.parent
-            if any(lib_dir.glob("lib*.so*")) or any(lib_dir.glob("lib*.dylib*")):
-                return (str(binary), lib_dir)
-            return (str(binary), None)
-
+        # Not found anywhere
         raise FileNotFoundError(
             "llama-server not found. Build from https://github.com/ggml-org/llama.cpp "
-            "or install a release binary with: litmoe install --engine llamacpp"
+            "or install with: litmoe install --engine llamacpp"
         )
 
     def build_command(self) -> list[str]:
