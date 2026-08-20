@@ -252,16 +252,19 @@ The only way to get >5 t/s on CPU-only hardware is a dense model
 (no MoE expert routing). Based on llama.cpp community benchmarks
 for similar hardware (not measured here):
 
-| Model type | Size | Est. t/s on this hardware |
-|---|---|---|
-| 7-9B dense | 5-10 GB | 10-20 t/s |
-| 12B dense | 7-18 GB | 5-10 t/s |
-| 27-32B dense | 16-55 GB | 2-5 t/s |
-| Any MoE >30B | varies | 0.3-1 t/s (measured) |
+| Model type | Size | t/s on THIS machine | Usability here |
+|---|---|---|---|
+| 7-9B dense | 5-10 GB | ~10-20 t/s (est.) | Interactive chat |
+| 12B dense | 7-18 GB | ~5-10 t/s (est.) | Interactive chat |
+| 27-32B dense | 16-55 GB | ~2-5 t/s (est.) | Slow chat |
+| Any MoE >30B | varies | 0.3-0.85 t/s (measured) | Impractical |
 
 The tradeoff: dense models have fewer total parameters than MoE models
 of equivalent quality, so you get less capability per token but actual
 conversation speed.
+
+No dense model has been benchmarked on this machine yet — only estimates
+from llama.cpp community benchmarks for similar hardware.
 
 ### Kimi-K3 and Qwen3.8-2.4T — hardware table
 
