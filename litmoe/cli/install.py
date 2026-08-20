@@ -278,6 +278,18 @@ def _install_llamacpp_source(prefix: Path) -> Path:
             except Exception:
                 pass  # best effort
 
+            # Copy OpenSSL if the binary links against it (Homebrew path)
+            import glob as _glob
+            for ssl_lib in ["libssl.3.dylib", "libcrypto.3.dylib",
+                            "libssl.35.dylib", "libcrypto.35.dylib"]:
+                if not (dest_dir / ssl_lib).exists():
+                    for search in ["/opt/homebrew/lib", "/usr/local/lib",
+                                   "/opt/homebrew/opt/openssl@3/lib"]:
+                        found = _glob.glob(f"{search}/{ssl_lib}")
+                        if found:
+                            shutil.copy2(found[0], str(dest_dir / ssl_lib))
+                            break
+
         # Create a wrapper script that sets library path
         # (LD_LIBRARY_PATH on Linux, DYLD_LIBRARY_PATH on macOS)
         bin_dir = prefix / "bin"
