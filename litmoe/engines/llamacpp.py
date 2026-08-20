@@ -46,15 +46,18 @@ class LlamaCppEngine(Engine):
         prefix = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
 
         # First: look for the direct binary in known install locations
-        # This is preferred over PATH discovery because:
-        # 1. Wrapper scripts on macOS may have been written by old code
-        #    that doesn't set DYLD_FALLBACK_LIBRARY_PATH
-        # 2. Direct binary + env vars from start() is more reliable
+        # Prebuilt binaries are in subdirectories like prebuilt/llama-b10516/
+        # Source builds are in local/
         for lib_subdir in ["lib/llama.cpp/local", "lib/llama.cpp/prebuilt"]:
             lib_dir = prefix / lib_subdir
             direct = lib_dir / "llama-server"
             if direct.exists():
                 return (str(direct), lib_dir)
+            # Search recursively for nested archives (e.g. prebuilt/llama-b10516/)
+            if lib_dir.exists():
+                for p in lib_dir.rglob("llama-server"):
+                    if p.is_file():
+                        return (str(p), p.parent)
 
         # Second: check PATH (may find a wrapper script)
         found = shutil.which("llama-server") or shutil.which("llama-server.exe")
