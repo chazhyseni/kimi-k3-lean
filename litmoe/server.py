@@ -124,22 +124,28 @@ class Gateway:
         from pathlib import Path
         ld = Path(log_dir) if log_dir else None
         for idx, model in enumerate(self.config.models):
-            # Auto-fix stale context sizes and set model-appropriate defaults
-            # Large models (DeepSeek-V4-Flash at 83 GB) need conservative ctx
-            # Small models (Qwen3.8-9B at 6 GB, Kimi-Linear at 30 GB) can use 256K+
+            # Auto-fix stale context sizes — set to model's native context
+            # All models support at least 128K. KV cache size depends on
+            # architecture (MLA/KDA use far less than standard attention).
             if model.n_ctx and model.n_ctx < 16384:
-                # Stale config from old code — bump to model-appropriate default
                 model_id = model.id or ""
-                if "deepseek-v4-flash" in model_id:
-                    model.n_ctx = 65536   # 83 GB model: keep 64K (KV cache = 5.8 GB)
-                elif "kimi-k3" in model_id or "qwen3.8-2.4t" in model_id:
-                    model.n_ctx = 131072  # trillion-scale: 128K (models support 256K-1M)
-                else:
-                    model.n_ctx = 262144  # small models: 256K (KV cache is tiny)
+                native_ctx = {
+                    "deepseek-v4-flash": 131072,   # 128K MLA
+                    "kimi-linear-48b": 1048576,     # 1M KDA+MLA
+                    "kimi-k3": 262144,              # 256K MLA
+                    "qwen3.8-2.4t": 262144,         # 256K (1M with YaRN)
+                    "qwen3.8-9b-distill": 131072,   # 128K (1M with YaRN)
+                    "minimax-m3": 1048576,          # 1M
+                    "gemma-4-12b": 131072,          # 128K
+                    "gemma-4-31b": 131072,          # 128K
+                    "llama-4-scout": 10485760,     # 10M
+                }
+                new_ctx = native_ctx.get(model_id, 131072)  # default 128K
                 logger.warning(
-                    "Model %s has n_ctx=%d (too small), auto-increasing to %d",
-                    model.id, model.n_ctx if model.n_ctx < 16384 else "n/a", model.n_ctx
+                    "Model %s has n_ctx=%d (too small), setting to %d",
+                    model.id, model.n_ctx, new_ctx
                 )
+                model.n_ctx = new_ctx
             logger.info("Loading %s via %s...", model.id, model.engine)
             engine = make_engine(model)
             # Assign unique port: first model 8081, second 8082, etc.

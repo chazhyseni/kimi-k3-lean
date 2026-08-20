@@ -1,34 +1,57 @@
 # Example litmoe models.yaml
 # Copy to models.yaml and edit paths.
+# Context sizes are set to each model's native maximum.
+# KV cache memory depends on architecture — see docs/SETUP.md for details.
 
 host: 127.0.0.1
 port: 8080
 api_key: null
 
 models:
-  # Small models: 256K context (KV cache is tiny — <4 GB even at 512K)
+  # Qwen3.8-9B-Distill (9B dense, 128K native, 1M with YaRN)
+  # KV cache at 128K: ~17 GB
   - id: qwen3.8-9b-distill
     engine: llamacpp
-    model_path: unsloth/Qwen3.8-9B-Distill-GGUF:Q4_K_M
+    model_path: empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M
     n_gpu_layers: -1
-    n_ctx: 262144    # 256K — model supports 1M with YaRN
+    n_ctx: 131072    # 128K native
 
+  # Kimi-Linear-48B (48B MoE, 3B active, 1M native via KDA+MLA)
+  # KV cache at 1M: ~15 GB (KDA is very compact)
   - id: kimi-linear-48b
     engine: llamacpp
     model_path: mradermacher/Kimi-Linear-48B-A3B-Instruct-GGUF:Q4_K_M
     n_gpu_layers: -1
-    n_ctx: 262144    # 256K — KDA attention uses tiny KV cache (~4 GB at 512K)
+    n_ctx: 1048576   # 1M
 
-  # Large MoE: 64K context (83 GB model leaves little room for KV cache)
+  # DeepSeek-V4-Flash (MoE, 128K native via MLA)
+  # KV cache at 128K: ~23 GB
   - id: deepseek-v4-flash
     engine: llamacpp
     model_path: unsloth/DeepSeek-V4-Flash-0731-GGUF:UD-IQ1_S
     n_gpu_layers: -1
-    n_ctx: 65536     # 64K — KV cache = 5.8 GB, model = 83 GB
+    n_ctx: 131072    # 128K native
 
-  # Trillion-scale: 128K context (models support 256K-1M)
+  # Kimi-K3 (2.78T MoE, 93B active, 256K native, 1M with YaRN via MLA)
+  # KV cache at 256K: ~50 GB
   # - id: kimi-k3
   #   engine: llamacpp
   #   model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
   #   n_gpu_layers: -1
-  #   n_ctx: 131072  # 128K
+  #   n_ctx: 262144  # 256K native
+
+  # MiniMax-M3 (428B MoE, 23B active, 1M native)
+  # KV cache at 1M: ~387 GB
+  # - id: minimax-m3
+  #   engine: llamacpp
+  #   model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M
+  #   n_gpu_layers: -1
+  #   n_ctx: 1048576 # 1M
+
+  # Llama-4-Scout (109B MoE, 17B active, 10M native!)
+  # KV cache at 10M: ~206 GB
+  # - id: llama-4-scout
+  #   engine: llamacpp
+  #   model_path: unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_M
+  #   n_gpu_layers: -1
+  #   n_ctx: 10485760 # 10M

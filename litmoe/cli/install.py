@@ -549,15 +549,20 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
         dest = download_model(model_name, quant, models_dir)
         engine_for_model = KNOWN_MODELS[model_name]["engine"]
 
-        # Set model-appropriate context size if user didn't override
+        # Set model-native context size if user didn't override (--n-ctx default)
         if n_ctx == 65536:
-            # Default: pick based on model size
-            if "deepseek-v4-flash" in model_name:
-                n_ctx = 65536   # 83 GB model: 64K (KV cache = 5.8 GB)
-            elif "kimi-k3" in model_name or "qwen3.8-2.4t" in model_name:
-                n_ctx = 131072  # trillion-scale: 128K
-            else:
-                n_ctx = 262144  # small models: 256K (KV cache is tiny)
+            native_ctx = {
+                "deepseek-v4-flash": 131072,   # 128K MLA
+                "kimi-linear-48b": 1048576,     # 1M KDA+MLA
+                "kimi-k3": 262144,              # 256K MLA
+                "qwen3.8-2.4t": 262144,         # 256K (1M with YaRN)
+                "qwen3.8-9b-distill": 131072,   # 128K (1M with YaRN)
+                "minimax-m3": 1048576,          # 1M
+                "gemma-4-12b": 131072,          # 128K
+                "gemma-4-31b": 131072,          # 128K
+                "llama-4-scout": 10485760,     # 10M
+            }
+            n_ctx = native_ctx.get(model_name, 131072)  # default 128K
 
         add_model_to_config(model_name, engine_for_model, dest, n_ctx, config_path)
         click.echo()
