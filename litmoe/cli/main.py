@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import signal
 import subprocess
@@ -30,38 +31,51 @@ def doctor():
     click.echo(f"litmoe v{__version__}")
     click.echo()
 
+    from litmoe.platform_utils import is_macos, get_total_memory_bytes
+
     # CPU detection
     click.echo("=== CPU ===")
-    try:
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if "model name" in line:
-                    click.echo(f"  {line.split(':')[1].strip()}")
-                    break
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if "flags" in line:
-                    flags = line.split(":")[1].strip().split()
-                    interesting = ["sse4_2", "avx", "avx2", "avx512f", "avx512_bf16",
-                                   "avx512_vnni", "amx_tile", "amx_bf16", "amx_int8"]
-                    supported = [flag for flag in interesting if flag in flags]
-                    click.echo(f"  Instruction sets: {', '.join(supported)}")
-                    break
-    except FileNotFoundError:
-        click.echo("  (not Linux)")
+    if is_macos():
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                click.echo(f"  {result.stdout.strip()}")
+            # Check for ARM64 features
+            if platform.machine() == "arm64":
+                click.echo("  Architecture: Apple Silicon (ARM64)")
+                click.echo("  Features: Metal, NEON, AMX")
+        except Exception:
+            click.echo("  (could not detect CPU)")
+    else:
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if "model name" in line:
+                        click.echo(f"  {line.split(':')[1].strip()}")
+                        break
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if "flags" in line:
+                        flags = line.split(":")[1].strip().split()
+                        interesting = ["sse4_2", "avx", "avx2", "avx512f", "avx512_bf16",
+                                       "avx512_vnni", "amx_tile", "amx_bf16", "amx_int8"]
+                        supported = [flag for flag in interesting if flag in flags]
+                        click.echo(f"  Instruction sets: {', '.join(supported)}")
+                        break
+        except FileNotFoundError:
+            click.echo("  (not Linux)")
 
-    # Memory
+    # Memory — cross-platform
     click.echo()
     click.echo("=== Memory ===")
-    try:
-        with open("/proc/meminfo") as f:
-            for line in f:
-                if "MemTotal" in line:
-                    kb = int(line.split()[1])
-                    click.echo(f"  Total: {kb / 1024 / 1024:.1f} GB")
-                    break
-    except FileNotFoundError:
-        pass
+    total_mem = get_total_memory_bytes()
+    if total_mem:
+        click.echo(f"  Total: {total_mem / 1e9:.1f} GB")
+    else:
+        click.echo("  (could not detect memory)")
 
     # GPU detection
     click.echo()
@@ -167,7 +181,7 @@ def init():
 
 
 @cli.command()
-@click.option("--config", "-c", type=click.Path(exists=True), default=None,
+@click.option("--config", "-c", type=click.Path(), default=None,
               help="Path to models.yaml")
 @click.option("--log-dir", default="logs", help="Directory for engine logs")
 def serve(config, log_dir):
@@ -175,7 +189,7 @@ def serve(config, log_dir):
     cfg_path = config or str(default_config_path())
     if not Path(cfg_path).exists():
         click.echo(f"Error: config not found: {cfg_path}", err=True)
-        click.echo("Run 'litmoe init' to create one.", err=True)
+        click.echo("Run 'litmoe init' or 'litmoe install --model X' to create one.", err=True)
         sys.exit(1)
 
     cfg = load_config(cfg_path)
@@ -186,11 +200,11 @@ def serve(config, log_dir):
     click.echo()
 
     from litmoe.server import run as server_run
-    server_run(cfg, log_dir=log_dir)
+    server_run(cfg, log_dir=log_dir, config_path=cfg_path)
 
 
 @cli.command()
-@click.option("--config", "-c", type=click.Path(exists=True), default=None)
+@click.option("--config", "-c", type=click.Path(), default=None)
 def status(config):
     """Show running gateway and engines."""
     import httpx

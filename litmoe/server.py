@@ -31,7 +31,8 @@ NATIVE_CTX = {
     "deepseek-v4-flash": 131072,   # 128K MLA
     "kimi-linear-48b": 1048576,     # 1M KDA+MLA
     "kimi-k3": 262144,              # 256K MLA
-    "qwen3.8-2.4t": 262144,         # 256K (1M with YaRN)
+    "qwen3.8": 262144,              # 256K (1M with YaRN) — KNOWN_MODELS key
+    "qwen3.8-2.4t": 262144,         # alias for backward compat
     "qwen3.8-9b-distill": 131072,   # 128K (1M with YaRN)
     "minimax-m3": 1048576,          # 1M
     "gemma-4-12b": 131072,          # 128K
@@ -45,7 +46,8 @@ KV_RATES = {
     "deepseek-v4-flash": 23.1e9 / 131072,
     "kimi-linear-48b": 15.0e9 / 1048576,
     "kimi-k3": 49.9e9 / 262144,
-    "qwen3.8-2.4t": 1580e9 / 262144,
+    "qwen3.8": 1580e9 / 262144,
+    "qwen3.8-2.4t": 1580e9 / 262144,         # alias
     "qwen3.8-9b-distill": 17.2e9 / 131072,
     "minimax-m3": 386.5e9 / 1048576,
     "gemma-4-12b": 85.9e9 / 131072,
@@ -57,6 +59,7 @@ KV_RATES = {
 MODEL_SIZES_GB = {
     "kimi-k3": {"UD-IQ1_S": 594, "UD-IQ1_M": 649, "UD-Q2_K_XL": 861, "UD-Q4_K_XL": 1509},
     "qwen3.8": {"UD-IQ1_S": 508, "UD-IQ1_M": 564, "UD-Q1_0": 397, "UD-IQ2_XXS": 657},
+    "qwen3.8-2.4t": {"UD-IQ1_S": 508, "UD-IQ1_M": 564, "UD-Q1_0": 397, "UD-IQ2_XXS": 657},
     "minimax-m3": {"UD-IQ1_M": 128, "UD-IQ2_M": 134, "UD-Q2_K_XL": 143, "UD-Q4_K_M": 264},
     "deepseek-v4-flash": {"UD-IQ1_S": 83, "UD-IQ1_M": 87, "UD-Q2_K_XL": 97, "UD-Q4_K_XL": 155},
     "gemma-4-31b": {"UD-IQ2_XXS": 9, "UD-IQ2_M": 11, "Q4_K_M": 18, "Q8_0": 33},
@@ -94,11 +97,12 @@ def compute_memory_aware_ctx(model_id: str, n_ctx: int) -> int:
     # Get KV cache rate (bytes per token)
     kv_rate = KV_RATES.get(model_id, 17.2e9 / 131072)  # default: ~17 GB at 128K
 
-    # Estimate model size from MODEL_SIZES_GB — use default quant if available
+    # Estimate model size from MODEL_SIZES_GB
+    # Use the average of available quants as a reasonable estimate
     model_size_gb = 0
     if model_id in MODEL_SIZES_GB:
         quants = MODEL_SIZES_GB[model_id]
-        model_size_gb = min(quants.values())  # conservative: smallest quant
+        model_size_gb = sum(quants.values()) / len(quants)
 
     # KV cache size at target context
     kv_gb = (kv_rate * target_ctx) / 1e9
@@ -135,8 +139,9 @@ def compute_memory_aware_ctx(model_id: str, n_ctx: int) -> int:
 class Gateway:
     """Routes OpenAI requests to the right engine based on model name."""
 
-    def __init__(self, config: GatewayConfig):
+    def __init__(self, config: GatewayConfig, config_path: str | None = None):
         self.config = config
+        self.config_path = config_path
         self.engines: dict[str, Engine] = {}
         self.app = FastAPI(title="litmoe gateway")
         self._setup_routes()
@@ -191,6 +196,20 @@ class Gateway:
 
     async def _proxy(self, request: Request, endpoint: str, anthropic: bool = False):
         """Forward request to the right engine."""
+        # API key validation
+        if self.config.api_key:
+            auth = request.headers.get("authorization", "")
+            provided = ""
+            if auth.startswith("Bearer "):
+                provided = auth[7:]
+            elif auth.startswith("bearer "):
+                provided = auth[7:]
+            # Also check x-api-key header (Anthropic style)
+            if not provided:
+                provided = request.headers.get("x-api-key", "")
+            if provided != self.config.api_key:
+                raise HTTPException(401, "invalid API key")
+
         body = await request.body()
         try:
             payload = json.loads(body) if body else {}
@@ -242,8 +261,8 @@ class Gateway:
         from pathlib import Path
         ld = Path(log_dir) if log_dir else None
         for idx, model in enumerate(self.config.models):
-            # Auto-fix stale context sizes — set to model's native context
-            # Also check if model + KV cache fits in available memory
+            # Auto-fix stale/zero context sizes using memory-aware computation
+            needs_persist = False
             if model.n_ctx and model.n_ctx < 16384:
                 new_ctx = compute_memory_aware_ctx(model.id, model.n_ctx)
 
@@ -252,14 +271,22 @@ class Gateway:
                     model.id, model.n_ctx, new_ctx
                 )
                 model.n_ctx = new_ctx
+                needs_persist = True
 
-                # Also persist the fix to models.yaml so it doesn't need
-                # auto-fixing every run
+            elif not model.n_ctx or model.n_ctx == 0:
+                # No context set — compute memory-aware default
+                new_ctx = compute_memory_aware_ctx(model.id, 0)
+                model.n_ctx = new_ctx
+                logger.info("Model %s: set n_ctx=%d (memory-aware default)", model.id, new_ctx)
+                needs_persist = True
+
+            # Persist the fix to models.yaml so it doesn't repeat every run
+            if needs_persist:
                 try:
                     import yaml as _yaml
-                    from litmoe.config import load_config, GatewayConfig
-                    import os
-                    cfg_path = os.environ.get("LITMOE_CONFIG")
+                    cfg_path = self.config_path
+                    if not cfg_path:
+                        cfg_path = os.environ.get("LITMOE_CONFIG", "")
                     if not cfg_path:
                         for candidate in ["models.yaml", "deploy/models.yaml", "config/models.yaml"]:
                             if Path(candidate).exists():
@@ -270,23 +297,22 @@ class Gateway:
                             raw = _yaml.safe_load(f)
                         for m in raw.get("models", []):
                             if m.get("id") == model.id:
-                                m["n_ctx"] = new_ctx
+                                m["n_ctx"] = model.n_ctx
                                 break
                         with open(cfg_path, "w") as f:
                             _yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
-                        logger.info("Persisted n_ctx=%d for %s to %s", new_ctx, model.id, cfg_path)
+                        logger.info("Persisted n_ctx=%d for %s to %s", model.n_ctx, model.id, cfg_path)
                 except Exception:
                     pass  # best effort — runtime fix is what matters
-            elif not model.n_ctx or model.n_ctx == 0:
-                # No context set — compute memory-aware default
-                new_ctx = compute_memory_aware_ctx(model.id, 0)
-                model.n_ctx = new_ctx
-                logger.info("Model %s: set n_ctx=%d (memory-aware default)", model.id, new_ctx)
 
             logger.info("Loading %s via %s...", model.id, model.engine)
             engine = make_engine(model)
             # Assign unique port: first model 8081, second 8082, etc.
-            engine._assigned_port = 8081 + idx
+            # Skip the gateway's own port to avoid collision
+            assigned_port = 8081 + idx
+            if assigned_port == self.config.port:
+                assigned_port += 1
+            engine._assigned_port = assigned_port
             engine.start(log_dir=ld)
             self.engines[model.id] = engine
 
@@ -318,16 +344,19 @@ async def _stream_response(url: str, body: bytes, timeout: httpx.Timeout, header
     try:
         # Use stream() which keeps the connection open for the full response
         async with client.stream("POST", url, content=body, headers=fwd_headers) as r:
-            # If the upstream returned an error, pass it through
+            # If the upstream returned an error, pass it through as JSON
             if r.status_code >= 400:
-                yield await r.aread()
+                error_body = await r.aread()
+                yield error_body
                 return
             # Raw byte passthrough — do NOT process lines, just forward bytes
             async for chunk in r.aiter_bytes():
                 yield chunk
     except httpx.RequestError as e:
         logger.error("Stream error: %s", e)
-        yield b"data: {\"error\": \"" + str(e).encode() + b"\"}\n\n"
+        error_data = {"error": {"message": str(e), "type": "connection_error"}}
+        yield f"data: {json.dumps(error_data)}\n\n".encode()
+        yield b"data: [DONE]\n\n"
     finally:
         await client.aclose()
 
@@ -366,7 +395,7 @@ def _anthropic_to_openai(payload: dict) -> dict:
         "model": payload.get("model"),
         "messages": messages,
         "max_tokens": payload.get("max_tokens", 8192),
-        "stream": False,  # Anthropic streaming is different SSE format
+        "stream": payload.get("stream", False),  # pass through stream flag
     }
     if "temperature" in payload:
         out["temperature"] = payload["temperature"]
@@ -378,16 +407,16 @@ def _anthropic_to_openai(payload: dict) -> dict:
     return out
 
 
-def run(config: GatewayConfig, log_dir: str | None = None) -> None:
+def run(config: GatewayConfig, log_dir: str | None = None, config_path: str | None = None) -> None:
     """Entry point: start gateway."""
-    gateway = Gateway(config)
+    gateway = Gateway(config, config_path=config_path)
     gateway.load_engines(log_dir=log_dir)
 
     # Wait for engines in background
     async def startup():
         ok = await gateway.wait_all_ready(timeout=600)
         if not ok:
-            logger.warning("Not all engines became ready")
+            logger.warning("Not all engines became ready — gateway will start anyway")
         else:
             logger.info("All engines ready.")
 

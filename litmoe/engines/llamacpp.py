@@ -64,7 +64,10 @@ class LlamaCppEngine(Engine):
                 lib_dir = prefix / lib_subdir
                 if lib_dir.exists():
                     return (found, lib_dir)
-            if any(p.parent.glob("lib*.so*")) or any(p.parent.glob("lib*.dylib*")):
+            # Check if shared libs are alongside the binary
+            so_files = list(p.parent.glob("lib*.so*"))
+            dylib_files = list(p.parent.glob("lib*.dylib*"))
+            if so_files or dylib_files:
                 return (found, p.parent)
             return (found, None)
 
@@ -102,8 +105,10 @@ class LlamaCppEngine(Engine):
         if self.model.n_ctx:
             cmd.extend(["-c", str(self.model.n_ctx)])
 
-        # Threads
-        cmd.extend(["-t", str(os.cpu_count() or 8)])
+        # Threads — cap at 8 for efficiency; more threads have diminishing
+        # returns for LLM inference and waste CPU on scheduling overhead
+        n_threads = min(os.cpu_count() or 8, 8)
+        cmd.extend(["-t", str(n_threads)])
 
         # Host/port
         cmd.extend(["--host", "127.0.0.1", "--port", str(self.default_port())])
@@ -137,14 +142,12 @@ class LlamaCppEngine(Engine):
 
             # On macOS, fix dylib paths at serve time too — handles binaries
             # that were built/installed before the fix was added
-            from litmoe.platform_utils import is_macos
             if is_macos():
                 # cmd[0] might be a wrapper script — resolve to actual binary
                 binary_path = Path(cmd[0])
-                if lib_dir:
-                    actual_binary = lib_dir / "llama-server"
-                    if actual_binary.exists():
-                        binary_path = actual_binary
+                actual_binary = lib_dir / "llama-server"
+                if actual_binary.exists():
+                    binary_path = actual_binary
                 fix_macos_dylib_paths(binary_path, Path(lib_dir))
 
         log_dir = log_dir or Path("logs")
@@ -166,5 +169,15 @@ class LlamaCppEngine(Engine):
 
 
 def is_installed() -> bool:
-    """Check if llama-server is installed."""
-    return shutil.which("llama-server") is not None or shutil.which("llama-server.exe") is not None
+    """Check if llama-server is installed.
+
+    Checks PATH first, then common install locations (~/.local, etc.).
+    """
+    # Check PATH
+    if shutil.which("llama-server") or shutil.which("llama-server.exe"):
+        return True
+
+    # Check install prefix locations
+    from litmoe.platform_utils import find_llama_server_binary
+    binary = find_llama_server_binary()
+    return binary is not None

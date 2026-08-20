@@ -230,26 +230,38 @@ def find_llama_server_binary(prefix: Path | None = None) -> Path | None:
     if prefix is None:
         prefix = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
 
-    candidates = [
-        prefix / "bin" / "llama-server",
+    # Direct binary locations (preferred over wrapper scripts)
+    direct_candidates = [
         prefix / "lib" / "llama.cpp" / "prebuilt" / "llama-server",
         prefix / "lib" / "llama.cpp" / "local" / "llama-server",
     ]
 
-    # Also search recursively in prebuilt/local dirs
+    # Also search recursively in prebuilt/local dirs for nested archives
     prebuilt_dir = prefix / "lib" / "llama.cpp" / "prebuilt"
     if prebuilt_dir.exists():
         for p in prebuilt_dir.rglob("llama-server"):
             if p.is_file():
-                candidates.insert(0, p)
+                direct_candidates.insert(0, p)
 
     local_dir = prefix / "lib" / "llama.cpp" / "local"
     if local_dir.exists():
         for p in local_dir.rglob("llama-server"):
             if p.is_file():
-                candidates.insert(0, p)
+                direct_candidates.insert(0, p)
 
-    for c in candidates:
+    # Also check prefix/bin (wrapper script or symlink)
+    direct_candidates.append(prefix / "bin" / "llama-server")
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_candidates = []
+    for c in direct_candidates:
+        key = str(c)
+        if key not in seen:
+            seen.add(key)
+            unique_candidates.append(c)
+
+    for c in unique_candidates:
         if c.exists() and c.is_file():
             return c
 

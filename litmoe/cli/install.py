@@ -126,10 +126,24 @@ def _default_prefix() -> Path:
 def install_llamacpp(prefix: Path) -> Path:
     """Install llama.cpp.
 
-    Downloads prebuilt binaries if glibc is new enough (>= 2.34).
+    On macOS: always uses prebuilt binaries (or source build as fallback).
+    On Linux: downloads prebuilt binaries if glibc is new enough (>= 2.34).
     Falls back to building from source on older systems (Debian 11, etc.).
     """
-    # Check glibc version
+    from litmoe.platform_utils import is_macos
+
+    if is_macos():
+        # macOS: try prebuilt first, fall back to source
+        try:
+            return _install_llamacpp_prebuilt(prefix)
+        except RuntimeError as e:
+            if "No prebuilt" in str(e):
+                click.echo(f"  No prebuilt binary for this platform: {e}")
+                click.echo("  Building from source instead...")
+                return _install_llamacpp_source(prefix)
+            raise
+
+    # Linux: check glibc version
     try:
         import ctypes
         libc = ctypes.CDLL("libc.so.6")
@@ -176,7 +190,18 @@ def _install_llamacpp_prebuilt(prefix: Path) -> Path:
         r.raise_for_status()
         data = r.json()
         tag = data["tag_name"]
-        asset = next(a for a in data["assets"] if asset_substr in a["name"])
+        # Find matching asset — may not exist for all platforms
+        asset = None
+        for a in data.get("assets", []):
+            if asset_substr in a["name"]:
+                asset = a
+                break
+        if not asset:
+            available = [a["name"] for a in data.get("assets", [])]
+            raise RuntimeError(
+                f"No llama.cpp release asset matching '{asset_substr}' "
+                f"in release {tag}. Available: {available[:5]}..."
+            )
         url = asset["browser_download_url"]
         size_mb = asset["size"] / 1e6
         click.echo(f"  Downloading {asset['name']} ({size_mb:.0f} MB)...")
@@ -193,7 +218,12 @@ def _install_llamacpp_prebuilt(prefix: Path) -> Path:
 
     click.echo(f"  Extracting to {dest_dir}...")
     with tarfile.open(tmp_path, "r:gz") as tar:
-        tar.extractall(dest_dir)
+        # Python 3.12+ requires explicit filter for security
+        try:
+            tar.extractall(dest_dir, filter="data")
+        except TypeError:
+            # Older Python doesn't support the filter argument
+            tar.extractall(dest_dir)
 
     tmp_path.unlink()
 
@@ -393,7 +423,6 @@ def install_ktransformers() -> None:
     - Requires Python 3.11+ and a C++ compiler (gcc/clang)
     - CUDA toolkit needed for GPU backend (CPU-only mode works without it)
     """
-    import platform
     import tempfile
 
     if platform.system() == "Darwin":
@@ -538,9 +567,11 @@ def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path
     # Find the first GGUF shard — llama-server needs a file path, not a directory
     gguf_files = sorted(dest.glob("*.gguf"))
     if not gguf_files:
-        click.echo(f"  WARNING: no .gguf files found in {dest}")
-        click.echo("  0 GGUF shards downloaded.")
-        return dest
+        raise RuntimeError(
+            f"No .gguf files found in {dest} after download. "
+            f"The repo '{repo}' may not have files matching '{allow_patterns}', "
+            f"or the download may have failed."
+        )
 
     n_files = len(gguf_files)
     first_shard = str(gguf_files[0])
@@ -669,12 +700,12 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
 
         # Set model-native context size if user didn't override (--n-ctx default)
         if n_ctx == 65536:
-            # Native context sizes per model
+            # Native context sizes per model — must match KNOWN_MODELS keys
             native_ctx = {
                 "deepseek-v4-flash": 131072,   # 128K MLA
                 "kimi-linear-48b": 1048576,     # 1M KDA+MLA
                 "kimi-k3": 262144,              # 256K MLA
-                "qwen3.8-2.4t": 262144,         # 256K (1M with YaRN)
+                "qwen3.8": 262144,              # 256K (1M with YaRN)
                 "qwen3.8-9b-distill": 131072,   # 128K (1M with YaRN)
                 "minimax-m3": 1048576,          # 1M
                 "gemma-4-12b": 131072,          # 128K
@@ -695,11 +726,12 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
 
                 # KV cache per model at native context (rough estimates)
                 # MLA/KDA models use much less than standard attention
+                # Keys must match KNOWN_MODELS keys
                 kv_per_ctx = {
                     "deepseek-v4-flash": 23.1 / 131072,    # MLA, ~23 GB at 128K
                     "kimi-linear-48b": 15.0 / 1048576,      # KDA, ~15 GB at 1M
                     "kimi-k3": 49.9 / 262144,              # MLA, ~50 GB at 256K
-                    "qwen3.8-2.4t": 1580 / 262144,         # standard, ~1580 GB at 256K
+                    "qwen3.8": 1580 / 262144,             # standard, ~1580 GB at 256K
                     "qwen3.8-9b-distill": 17.2 / 131072,  # dense, ~17 GB at 128K
                     "minimax-m3": 386.5 / 1048576,        # standard, ~387 GB at 1M
                     "gemma-4-12b": 85.9 / 131072,          # dense, ~86 GB at 128K

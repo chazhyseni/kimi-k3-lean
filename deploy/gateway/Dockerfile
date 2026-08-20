@@ -29,6 +29,6 @@ COPY litmoe/ litmoe/
 RUN pip install --no-cache-dir -e .
 
 ENV LITMOE_CONFIG=/config/models.yaml
-EXPOSE 8080
+EXPOSE 8000
 
 CMD ["litmoe", "serve"]

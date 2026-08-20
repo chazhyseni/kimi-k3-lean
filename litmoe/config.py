@@ -30,8 +30,28 @@ class GatewayConfig(BaseModel):
 
 
 def default_config_path() -> Path:
-    """Path to the default config file."""
-    return Path(os.environ.get("LITMOE_CONFIG", "models.yaml"))
+    """Path to the default config file.
+
+    Checks LITMOE_CONFIG env var first, then models.yaml in the current
+    directory, then ~/.litmoe/models.yaml as a fallback.
+    Returns an absolute path.
+    """
+    env_config = os.environ.get("LITMOE_CONFIG")
+    if env_config:
+        return Path(env_config).resolve()
+
+    # Check current directory
+    local = Path("models.yaml")
+    if local.exists():
+        return local.resolve()
+
+    # Check ~/.litmoe/models.yaml
+    home = Path.home() / ".litmoe" / "models.yaml"
+    if home.exists():
+        return home
+
+    # Default to cwd/models.yaml even if it doesn't exist yet
+    return local.resolve()
 
 
 def load_config(path: Path | str | None = None) -> GatewayConfig:

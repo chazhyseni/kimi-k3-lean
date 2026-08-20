@@ -19,7 +19,8 @@ class KtransformersEngine(Engine):
     """Adapter for ktransformers (kt run)."""
 
     def default_port(self) -> int:
-        return 10002  # ktransformers server default
+        # Use assigned port if set by gateway, otherwise default
+        return getattr(self, "_assigned_port", 10002)
 
     def health_url(self) -> str:
         return f"http://127.0.0.1:{self.default_port()}/v1/models"
