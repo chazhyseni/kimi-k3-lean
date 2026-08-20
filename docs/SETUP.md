@@ -217,39 +217,51 @@ AMD EPYC 7B13 (24 physical cores, 48 SMT, AVX2 only, 377 GB DDR4-3200,
 no GPU, Google Cloud PersistentDisk ~379 MB/s random / ~778 MB/s
 sequential).
 
-| Model | Quant | Size | t/s | Usability |
-|---|---|---|---|---|
-| Kimi-K3 (2.78T MoE) | UD-IQ1_S | 594 GB | 0.85 | Impractical (disk-bound) |
-| DeepSeek-V4-Flash (~150B MoE) | UD-IQ1_S | 83 GB | 0.33 | Impractical |
+| Model | Type | Quant | Size | t/s | Usability |
+|---|---|---|---|---|---|
+| Kimi-K3 (2.78T) | MoE 93B active | UD-IQ1_S | 594 GB | 0.85 | Impractical |
+| DeepSeek-V4-Flash (~150B) | MoE ~30B active | UD-IQ1_S | 83 GB | 0.33 | Impractical |
+| Kimi-Linear-48B | MoE 3B active | Q4_K_M | 30 GB | 0.58 | Impractical |
 
-These are the only two models measured on this hardware. The Kimi-K3
-number was measured in an earlier session; the V4-Flash number was
-measured on August 19, 2026 during the first live test. Both are
-CPU-only, no GPU.
+All three measured via llama.cpp, CPU-only, no GPU, in Docker containers.
 
-### Why these models are slow on CPU
+**Finding: no MoE model is usable for interactive chat on this hardware.**
+Even Kimi-Linear-48B with only 3B active parameters is 0.58 t/s —
+not dramatically faster than the 594 GB Kimi-K3. The bottleneck is not
+active compute (which is small) but loading 256 expert weight matrices
+through CPU memory bandwidth and cloud disk on every token.
 
-MoE models activate only a subset of experts per token (e.g. 6 of 256
-for V4-Flash, 16 of 896 for K3). The active compute is small — but every
-expert must be loaded from RAM/disk, even the cold ones. On cloud disk
-at 379 MB/s, expert loading dominates. On local NVMe at 7 GB/s, these
-models would be 10-20x faster. On GPU, 100-1000x faster.
+Prefill (prompt processing) is faster: 16-28 t/s for Kimi-Linear-48B.
+But generation is 0.58 t/s because each generated token requires loading
+8 of 256 experts from memory.
 
-### What works for interactive chat on CPU-only
+### Measured throughput from ktransformers docs (GPU hardware)
 
-Smaller dense models (7-32B) or very small MoE models are the only
-options for interactive chat on a CPU-only machine. The tradeoff:
-fewer parameters means less capability but actual conversation speed.
+These are from ktransformers' official tutorials, not measured by us.
 
-No models in this size range have been benchmarked in this project yet.
-Based on llama.cpp community benchmarks for similar hardware:
+| Model | Hardware | t/s | Source |
+|---|---|---|---|
+| Kimi-K2 | 1 GPU + 600 GB RAM | ~10 | ktransformers Kimi-K2 tutorial |
+| DeepSeek-V3 | 1 GPU + 382 GB RAM | 10-16 | ktransformers tutorial |
+| DeepSeek-R1 | 8xL20 + Xeon | 227 | ktransformers README |
+| SmallThinker-21B | 1 GPU + 42 GB RAM | ~26 | ktransformers tutorial |
 
-- 7B dense (e.g. Qwen3-8B, Llama-3.3-8B): ~10-20 t/s on 24 AVX2 cores
-- 12B dense (e.g. Gemma-4-12B): ~5-10 t/s
-- 27-32B dense: ~2-5 t/s
-- 30B MoE with 3B active (Qwen3-30B-A3B): ~8-15 t/s
+### What works for interactive chat
 
-These are estimates from community reports, not measured here.
+The only way to get >5 t/s on CPU-only hardware is a dense model
+(no MoE expert routing). Based on llama.cpp community benchmarks
+for similar hardware (not measured here):
+
+| Model type | Size | Est. t/s on this hardware |
+|---|---|---|
+| 7-9B dense | 5-10 GB | 10-20 t/s |
+| 12B dense | 7-18 GB | 5-10 t/s |
+| 27-32B dense | 16-55 GB | 2-5 t/s |
+| Any MoE >30B | varies | 0.3-1 t/s (measured) |
+
+The tradeoff: dense models have fewer total parameters than MoE models
+of equivalent quality, so you get less capability per token but actual
+conversation speed.
 
 ### Kimi-K3 and Qwen3.8-2.4T — hardware table
 
