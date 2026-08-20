@@ -235,6 +235,24 @@ def _install_llamacpp_prebuilt(prefix: Path) -> Path:
             break
     if not server:
         raise RuntimeError(f"llama-server not found in extracted archive at {dest_dir}")
+
+    # Strip macOS quarantine/provenance attributes by copying binary to a
+    # new file. macOS applies com.apple.provenance to files from certain
+    # sources (including tar extraction) which blocks Python's execve()
+    # and subprocess from launching the binary. Copying creates a clean
+    # file without the attribute.
+    if platform.system() == "Darwin":
+        import shutil as _shutil
+        clean = server.parent / "llama-server.clean"
+        _shutil.copy2(str(server), str(clean))
+        _shutil.move(str(clean), str(server))
+        # Also clean all dylibs
+        for dylib in server.parent.glob("*.dylib*"):
+            if dylib.is_file():
+                clean = dylib.parent / f".{dylib.name}.clean"
+                _shutil.copy2(str(dylib), str(clean))
+                _shutil.move(str(clean), str(dylib))
+
     server.chmod(server.stat().st_mode | stat.S_IEXEC)
 
     # Fix dylib paths on macOS (prebuilt binaries may have stale rpaths)
