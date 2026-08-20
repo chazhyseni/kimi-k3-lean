@@ -222,18 +222,17 @@ sequential).
 | Kimi-K3 (2.78T) | MoE 93B active | UD-IQ1_S | 594 GB | 0.85 | Impractical |
 | DeepSeek-V4-Flash (~150B) | MoE ~30B active | UD-IQ1_S | 83 GB | 0.33 | Impractical |
 | Kimi-Linear-48B | MoE 3B active | Q4_K_M | 30 GB | 0.58 | Impractical |
+| Qwen3.8-9B-Distill | Dense 9B | Q4_K_M | 6 GB | 0.69 | Impractical |
 
-All three measured via llama.cpp, CPU-only, no GPU, in Docker containers.
+All measured via llama.cpp, CPU-only, no GPU, in Docker containers.
+Hardware: AMD EPYC 7B13, 24 physical cores, AVX2 only (no AVX-512/AMX),
+DDR4-3200, Google Cloud PersistentDisk.
 
-**Finding: no MoE model is usable for interactive chat on this hardware.**
-Even Kimi-Linear-48B with only 3B active parameters is 0.58 t/s —
-not dramatically faster than the 594 GB Kimi-K3. The bottleneck is not
-active compute (which is small) but loading 256 expert weight matrices
-through CPU memory bandwidth and cloud disk on every token.
-
-Prefill (prompt processing) is faster: 16-28 t/s for Kimi-Linear-48B.
-But generation is 0.58 t/s because each generated token requires loading
-8 of 256 experts from memory.
+**Finding: no model is usable for interactive chat on this hardware.**
+Even a 9B dense model is 0.69 t/s. The bottleneck is CPU memory
+bandwidth — AVX2-only with DDR4-3200 is too slow for any model
+architecture. Community benchmarks showing 10-20 t/s for 9B models
+assume AVX-512 or Apple Silicon with higher memory bandwidth.
 
 ### Measured throughput from ktransformers docs (GPU hardware)
 
@@ -254,17 +253,21 @@ for similar hardware (not measured here):
 
 | Model type | Size | t/s on THIS machine | Usability here |
 |---|---|---|---|
-| 7-9B dense | 5-10 GB | ~10-20 t/s (est.) | Interactive chat |
-| 12B dense | 7-18 GB | ~5-10 t/s (est.) | Interactive chat |
-| 27-32B dense | 16-55 GB | ~2-5 t/s (est.) | Slow chat |
-| Any MoE >30B | varies | 0.3-0.85 t/s (measured) | Impractical |
+| 7-9B dense | 5-10 GB | 0.69 (measured) | Impractical |
+| 12B dense | 7-18 GB | not measured | Unknown |
+| 27-32B dense | 16-55 GB | not measured | Unknown |
+| Any MoE >30B | varies | 0.3-0.85 (measured) | Impractical |
+
+The 9B dense measurement (0.69 t/s) is far below community estimates
+(10-20 t/s). The bottleneck is this machine's CPU: AVX2-only (no
+AVX-512, no AMX, no VNNI) with DDR4-3200. Models that run at 10-20 t/s
+on AVX-512 or Apple Silicon run at <1 t/s here.
 
 The tradeoff: dense models have fewer total parameters than MoE models
 of equivalent quality, so you get less capability per token but actual
-conversation speed.
+conversation speed — on hardware with sufficient memory bandwidth.
 
-No dense model has been benchmarked on this machine yet — only estimates
-from llama.cpp community benchmarks for similar hardware.
+No model has been measured at interactive speed on this machine.
 
 ### Kimi-K3 and Qwen3.8-2.4T — hardware table
 
@@ -362,17 +365,20 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 
 | Model | llama.cpp | ktransformers | Default quant | Size | Measured t/s (CPU) |
 |---|---|---|---|---|---|
+| Qwen3.8-9B-Distill | Yes (native) | No | Q4_K_M | 6 GB | 0.69 (impractical) |
 | Gemma-4-12B | Yes (native) | No | Q4_K_M | 7 GB | not measured |
 | Gemma-4-31B | Yes (native) | No | UD-Q4_K_XL | 19 GB | not measured |
 | Llama-4-Scout | Yes (native) | No | Q4_K_M | 65 GB | not measured |
 | DeepSeek-V4-Flash | Yes (native) | No | UD-IQ1_S | 83 GB | 0.33 (impractical) |
+| Kimi-Linear-48B | Yes (native) | No | Q4_K_M | 30 GB | 0.58 (impractical) |
 | MiniMax-M3 | Yes (native) | Yes (SM90 GPU) | UD-IQ1_M | 128 GB | not measured |
 | Kimi-K3 | Yes (native) | No | UD-IQ1_S | 594 GB | 0.85 (impractical) |
 | Qwen3.8-2.4T | Yes (native) | No | UD-IQ1_S | 508 GB | not measured |
 | DeepSeek-V3 | Yes | Yes (Linux+NVIDIA) | varies | ~600 GB | not measured |
 | Kimi-K2 | Yes | Yes (Linux+NVIDIA, ~10 t/s) | Q4_K_M | ~600 GB | not measured |
 
-Measured on AMD EPYC 7B13, 24 cores, AVX2, 377 GB RAM, no GPU, cloud disk.
+Measured on AMD EPYC 7B13, 24 cores, AVX2 only, 377 GB RAM, no GPU, cloud disk.
+No model measured at interactive speed on this hardware.
 ktransformers requires Linux + NVIDIA GPU (triton dependency).
 llama.cpp works on Linux, macOS (Metal), and Windows (Vulkan/DirectML).
 
