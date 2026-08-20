@@ -10,6 +10,20 @@ and engine source code as of August 2026.
 - 50 GB free disk for engine binaries + logs (models need much more, see below)
 - Linux or macOS. Windows via WSL2.
 
+> **Important for macOS users with multiple Python installations:**
+> Always install and run litmoe with the same Python interpreter. If `python3`
+> and `pip` point to different installations (e.g. Homebrew 3.14 vs conda 3.12),
+> the `litmoe` entry point may run with the wrong Python, causing TCC file access
+> errors when loading models from `~/.litmoe/models/`.
+>
+> Check with: `python3 -c "import sys; print(sys.executable)"` and
+> `pip --version` — if they differ, use the pip Python explicitly:
+> ```bash
+> /path/to/correct/python -m pip install -e .
+> /path/to/correct/python -m litmoe serve
+> ```
+> Run `litmoe doctor` to verify your Python has no access issues.
+
 ## Step 1: Install litmoe
 
 ```bash

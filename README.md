@@ -65,7 +65,10 @@ Trillion-parameter MoE models (Kimi K3, Qwen3.8-2.4T, DeepSeek-V3) are open weig
 ## Quick start
 
 ```bash
-# Install litmoe
+# Install litmoe — always use the SAME Python for install and serve
+# If you have multiple Pythons, use the full path to avoid mismatches:
+#   /path/to/python -m pip install -e .
+#   /path/to/python -m litmoe serve
 git clone https://github.com/chazhyseni/litMoE
 cd litMoE
 pip install -e .
@@ -83,6 +86,17 @@ litmoe serve
 # Test
 curl http://127.0.0.1:8080/v1/models
 ```
+
+> **macOS users with multiple Python installations:** If you have both
+> Homebrew Python and conda/miniforge Python, always install and run litmoe
+> with the same interpreter. Homebrew Python 3.14+ may have TCC restrictions
+> that prevent accessing files in `~/.litmoe/models/`. Use conda/miniforge
+> Python instead:
+> ```bash
+> /usr/local/miniforge3/bin/python -m pip install -e .
+> /usr/local/miniforge3/bin/python -m litmoe serve
+> ```
+> Run `litmoe doctor` to check if your Python has access issues.
 
 Full setup guide with hardware requirements, quantization options, and per-model
 instructions: [docs/SETUP.md](docs/SETUP.md)

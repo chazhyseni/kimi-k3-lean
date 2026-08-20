@@ -18,6 +18,13 @@ from litmoe.engines import kt_installed, llama_installed
 from litmoe.cli.install import install_cmd
 
 
+def _warn_python_access() -> None:
+    """Check if the running Python can access model files. Print warnings if not."""
+    from litmoe.platform_utils import check_python_access
+    for msg in check_python_access():
+        click.echo(msg, err=True)
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="litmoe")
 def cli():
@@ -29,7 +36,11 @@ def cli():
 def doctor():
     """Check hardware compatibility and engine availability."""
     click.echo(f"litmoe v{__version__}")
+    click.echo(f"Python: {sys.executable} ({sys.version.split()[0]})")
     click.echo()
+
+    # Check Python file access (macOS TCC issue)
+    _warn_python_access()
 
     from litmoe.platform_utils import is_macos, get_total_memory_bytes
 
@@ -186,6 +197,11 @@ def init():
 @click.option("--log-dir", default="logs", help="Directory for engine logs")
 def serve(config, log_dir):
     """Start the gateway with all configured engines."""
+    # Check that the running Python can access model files.
+    # On macOS with multiple Python installations, a Homebrew Python
+    # may have TCC restrictions preventing file access in ~/.litmoe/.
+    _warn_python_access()
+
     cfg_path = config or str(default_config_path())
     if not Path(cfg_path).exists():
         click.echo(f"Error: config not found: {cfg_path}", err=True)

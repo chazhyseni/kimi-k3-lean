@@ -16,7 +16,7 @@ from pathlib import Path
 from litmoe.engines.base import Engine
 from litmoe.config import ModelEntry
 from litmoe.platform_utils import (
-    is_macos, is_linux, get_library_path_env,
+    is_macos, get_library_path_env,
     find_llama_server_binary, fix_macos_dylib_paths,
 )
 
@@ -152,17 +152,16 @@ class LlamaCppEngine(Engine):
             if actual_binary.exists():
                 # Strip com.apple.provenance by copying binary over itself.
                 # This MUST succeed — if it fails, the binary can't be launched.
-                import shutil as _shutil
                 tmp = actual_binary.parent / ".llama-server.tmp"
-                _shutil.copy2(str(actual_binary), str(tmp))
-                _shutil.move(str(tmp), str(actual_binary))
+                shutil.copy2(str(actual_binary), str(tmp))
+                shutil.move(str(tmp), str(actual_binary))
                 os.chmod(str(actual_binary), 0o755)
                 # Also strip provenance from all dylibs
                 for dylib in actual_binary.parent.glob("*.dylib*"):
                     if dylib.is_file():
                         dtmp = dylib.parent / f".{dylib.name}.tmp"
-                        _shutil.copy2(str(dylib), str(dtmp))
-                        _shutil.move(str(dtmp), str(dylib))
+                        shutil.copy2(str(dylib), str(dtmp))
+                        shutil.move(str(dtmp), str(dylib))
 
             wrapper = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local")) / "bin" / "llama-server"
             wrapper.parent.mkdir(parents=True, exist_ok=True)

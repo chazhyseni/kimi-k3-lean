@@ -9,6 +9,7 @@ Reference: https://github.com/kvcache-ai/ktransformers
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 from litmoe.engines.base import Engine
@@ -29,8 +30,11 @@ class KtransformersEngine(Engine):
         """Build ktransformers server command."""
         # ktransformers server is started via python -m ktransformers.server.main
         # or via the kt-kernel CLI: kt run
-        # We use the server/main.py path for maximum compatibility
-        cmd = ["python", "-m", "ktransformers.server.main"]
+        # Always use sys.executable so the engine subprocess runs under the
+        # same Python interpreter that litmoe itself was installed with.
+        # This avoids issues where 'python' on PATH points to a different
+        # installation (e.g. Homebrew 3.14 vs miniforge 3.12).
+        cmd = [sys.executable, "-m", "ktransformers.server.main"]
 
         # Model path (safetensors directory)
         if self.model.model_path:
