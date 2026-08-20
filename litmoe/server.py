@@ -123,9 +123,11 @@ class Gateway:
         """Start all configured engines."""
         from pathlib import Path
         ld = Path(log_dir) if log_dir else None
-        for model in self.config.models:
+        for idx, model in enumerate(self.config.models):
             logger.info("Loading %s via %s...", model.id, model.engine)
             engine = make_engine(model)
+            # Assign unique port: first model 8081, second 8082, etc.
+            engine._assigned_port = 8081 + idx
             engine.start(log_dir=ld)
             self.engines[model.id] = engine
 
