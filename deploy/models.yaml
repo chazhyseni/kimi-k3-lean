@@ -12,7 +12,7 @@ models:
     engine: llamacpp
     model_path: /models/deepseek-v4-flash/UD-IQ1_S/DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf
     n_gpu_layers: 0
-    n_ctx: 4096
+    n_ctx: 16384
 
   # MiniMax-M3 (128 GB IQ1_M, 128 GB RAM)
   # - id: minimax-m3

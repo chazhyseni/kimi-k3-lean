@@ -197,50 +197,105 @@ open bugs in llama.cpp (CUDA lockups, long-context crashes). The 2.4T variant
 shares the same architecture (Qwen3_5MoeForCausalLM) but has no reported
 issues specific to it. Test before relying on it in production.
 
-## Hardware requirements
+## Hardware requirements and expected performance
 
-The total memory (RAM + VRAM) must be at least the GGUF size. VRAM holds GPU
-layers (`-ngl`), RAM holds the rest. Add ~10% overhead for KV cache and OS.
+Memory determines whether a model loads. Throughput determines whether
+it's usable. These are different things — a model that "fits in RAM"
+can still be too slow for interactive use.
 
-### Kimi-K3 and Qwen3.8-2.4T
+### What "usable" means
 
-These are trillion-parameter models. IQ1_S is the practical quant.
+- **Interactive chat**: >5 tokens/second. You can have a conversation.
+- **Batch processing**: 0.5-5 tokens/second. Usable for one-shot
+  completions, summaries, code generation — not back-and-forth chat.
+- **Impractical**: <0.5 tokens/second. Each response takes minutes.
+  Only viable for offline batch jobs.
 
-| Hardware | What fits | RAM needed (IQ1_S) |
-|---|---|---|
-| CPU only, no GPU | 0 layers on GPU | 594 GB (K3) / 508 GB (Qwen3.8) |
-| 1 GPU, 24 GB VRAM | ~4 layers on GPU | ~570 GB (K3) / ~484 GB (Qwen3.8) |
-| 2 GPU, 160 GB VRAM | ~25 layers on GPU | ~434 GB (K3) / ~348 GB (Qwen3.8) |
-| 4 GPU, 320 GB VRAM | ~50 layers on GPU | ~274 GB (K3) / ~188 GB (Qwen3.8) |
-| 8 GPU, 640 GB VRAM | All layers on GPU | ~0 GB extra RAM (K3) |
+### Measured throughput on this project's hardware
 
-These numbers are arithmetic (GGUF size minus VRAM), not measured. Real
-throughput depends on RAM bandwidth, GPU model, and CPU speed. No benchmark
-data exists yet for K3 or Qwen3.8-2.4T on these configs in litmoe.
+AMD EPYC 7B13 (24 physical cores, 48 SMT, AVX2 only, 377 GB DDR4-3200,
+no GPU, Google Cloud PersistentDisk ~379 MB/s random / ~778 MB/s
+sequential).
 
-The only measured speed data point we have: llama.cpp on this project's
-EPYC 7B13 (24 cores, 377 GB DDR4, no GPU, 379 MB/s disk) ran Kimi-K3 IQ1_S
-at 0.85 tokens/second. That was entirely disk-bound.
+| Model | Quant | Size | t/s | Usability |
+|---|---|---|---|---|
+| Kimi-K3 (2.78T MoE) | UD-IQ1_S | 594 GB | 0.85 | Impractical (disk-bound) |
+| DeepSeek-V4-Flash (~150B MoE) | UD-IQ1_S | 83 GB | 0.33 | Impractical |
 
-### MiniMax-M3
+These are the only two models measured on this hardware. The Kimi-K3
+number was measured in an earlier session; the V4-Flash number was
+measured on August 19, 2026 during the first live test. Both are
+CPU-only, no GPU.
 
-M3 is the most accessible trillion-scale model. At 128 GB (IQ1_M), it fits on
-high-end workstations.
+### Why these models are slow on CPU
 
-| Hardware | What fits | RAM needed (IQ1_M) |
-|---|---|---|
-| CPU only, 128 GB RAM | All layers on CPU | 128 GB |
-| CPU only, 192 GB RAM | All layers on CPU + KV cache headroom | 128 GB |
-| 1 GPU, 24 GB VRAM | ~11 layers on GPU | ~104 GB |
-| 2 GPU, 48 GB VRAM | ~22 layers on GPU | ~80 GB |
-| Mac Studio M3 Ultra, 192 GB unified | All layers via Metal | 128 GB |
+MoE models activate only a subset of experts per token (e.g. 6 of 256
+for V4-Flash, 16 of 896 for K3). The active compute is small — but every
+expert must be loaded from RAM/disk, even the cold ones. On cloud disk
+at 379 MB/s, expert loading dominates. On local NVMe at 7 GB/s, these
+models would be 10-20x faster. On GPU, 100-1000x faster.
 
-M3 at 428B params is less than 1/5th the size of K3 (2.78T). The 23B active
-parameter count means each token only computes 4 of 128 experts + 1 shared,
-keeping per-token compute low.
+### What works for interactive chat on CPU-only
 
-No measured throughput data for M3 on CPU exists in this project. The
-ktransformers MiniMax-M3 tutorial targets 8x H20 GPUs with CPU expert offloading.
+Smaller dense models (7-32B) or very small MoE models are the only
+options for interactive chat on a CPU-only machine. The tradeoff:
+fewer parameters means less capability but actual conversation speed.
+
+No models in this size range have been benchmarked in this project yet.
+Based on llama.cpp community benchmarks for similar hardware:
+
+- 7B dense (e.g. Qwen3-8B, Llama-3.3-8B): ~10-20 t/s on 24 AVX2 cores
+- 12B dense (e.g. Gemma-4-12B): ~5-10 t/s
+- 27-32B dense: ~2-5 t/s
+- 30B MoE with 3B active (Qwen3-30B-A3B): ~8-15 t/s
+
+These are estimates from community reports, not measured here.
+
+### Kimi-K3 and Qwen3.8-2.4T — hardware table
+
+These are trillion-parameter models. They require datacenter-class
+hardware for interactive use.
+
+| Hardware | RAM needed (IQ1_S) | Est. t/s | Usability |
+|---|---|---|---|
+| CPU only (this machine) | 594 GB (K3) / 508 GB (Qwen3.8) | ~0.85 (measured) | Impractical |
+| CPU only, local NVMe | same | ~5-10 (est.) | Batch processing |
+| 1 GPU, 24 GB VRAM | ~570 GB (K3) | ~1-3 (est.) | Batch processing |
+| 2 GPU, 160 GB VRAM | ~434 GB (K3) | ~3-8 (est.) | Batch / slow chat |
+| 4 GPU, 320 GB VRAM | ~274 GB (K3) | ~5-15 (est.) | Interactive chat |
+| 8 GPU, 640 GB VRAM | ~0 GB extra | ~15-50 (est.) | Interactive chat |
+
+RAM numbers are arithmetic (GGUF size minus VRAM). t/s numbers are
+estimates based on scaling from the measured 0.85 t/s data point.
+No GPU measurements exist in this project.
+
+### MiniMax-M3 — hardware table
+
+| Hardware | RAM needed (IQ1_M) | Est. t/s | Usability |
+|---|---|---|---|
+| CPU only, 128 GB RAM | 128 GB | not measured | Unknown |
+| CPU only, 192 GB RAM | 128 GB | not measured | Unknown |
+| 1 GPU, 24 GB VRAM | ~104 GB | not measured | Unknown |
+| 2 GPU, 48 GB VRAM | ~80 GB | not measured | Unknown |
+| Mac Studio, 192 GB unified (Metal) | 128 GB | not measured | Unknown |
+
+M3 has not been benchmarked in this project. At 428B params / 23B
+active, it is 5x smaller than K3 — but whether that translates to
+usable speed on CPU is unverified. The ktransformers M3 tutorial
+targets 8x H20 GPUs.
+
+### DeepSeek-V4-Flash — hardware table
+
+| Hardware | RAM needed (IQ1_S) | t/s | Usability |
+|---|---|---|---|
+| CPU only (this machine) | 83 GB | 0.33 (measured) | Impractical |
+| CPU only, local NVMe | 83 GB | not measured | Unknown |
+| 1 GPU, 24 GB VRAM | ~60 GB | not measured | Unknown |
+| 4 GPU, 320 GB VRAM | ~0 GB extra | not measured | Unknown |
+
+V4-Flash at 0.33 t/s on this machine is not usable for chat despite
+fitting comfortably in 378 GB RAM. The bottleneck is expert loading
+from cloud disk, not RAM capacity.
 
 ## Step 4: Configure models.yaml
 
@@ -290,18 +345,19 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 
 ## Quick reference: which engine for which model?
 
-| Model | llama.cpp | ktransformers | Default quant | Size |
-|---|---|---|---|---|
-| Gemma-4-12B | Yes (native) | No | Q4_K_M | 7 GB |
-| Gemma-4-31B | Yes (native) | No | UD-Q4_K_XL | 19 GB |
-| Llama-4-Scout | Yes (native) | No | Q4_K_M | 65 GB |
-| DeepSeek-V4-Flash | Yes (native) | No | UD-IQ1_S | 83 GB |
-| MiniMax-M3 | Yes (native) | Yes (SM90 GPU) | UD-IQ1_M | 128 GB |
-| Kimi-K3 | Yes (native) | No | UD-IQ1_S | 594 GB |
-| Qwen3.8-2.4T | Yes (native) | No | UD-IQ1_S | 508 GB |
-| DeepSeek-V3 | Yes | Yes (Linux+NVIDIA) | varies | ~600 GB |
-| Kimi-K2 | Yes | Yes (Linux+NVIDIA, ~10 t/s) | Q4_K_M | ~600 GB |
+| Model | llama.cpp | ktransformers | Default quant | Size | Measured t/s (CPU) |
+|---|---|---|---|---|---|
+| Gemma-4-12B | Yes (native) | No | Q4_K_M | 7 GB | not measured |
+| Gemma-4-31B | Yes (native) | No | UD-Q4_K_XL | 19 GB | not measured |
+| Llama-4-Scout | Yes (native) | No | Q4_K_M | 65 GB | not measured |
+| DeepSeek-V4-Flash | Yes (native) | No | UD-IQ1_S | 83 GB | 0.33 (impractical) |
+| MiniMax-M3 | Yes (native) | Yes (SM90 GPU) | UD-IQ1_M | 128 GB | not measured |
+| Kimi-K3 | Yes (native) | No | UD-IQ1_S | 594 GB | 0.85 (impractical) |
+| Qwen3.8-2.4T | Yes (native) | No | UD-IQ1_S | 508 GB | not measured |
+| DeepSeek-V3 | Yes | Yes (Linux+NVIDIA) | varies | ~600 GB | not measured |
+| Kimi-K2 | Yes | Yes (Linux+NVIDIA, ~10 t/s) | Q4_K_M | ~600 GB | not measured |
 
+Measured on AMD EPYC 7B13, 24 cores, AVX2, 377 GB RAM, no GPU, cloud disk.
 ktransformers requires Linux + NVIDIA GPU (triton dependency).
 llama.cpp works on Linux, macOS (Metal), and Windows (Vulkan/DirectML).
 
