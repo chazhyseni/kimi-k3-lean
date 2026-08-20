@@ -162,6 +162,10 @@ class LlamaCppEngine(Engine):
             # Launch via bash, not execve — bash can execute the binary
             # even with com.apple.provenance
             shell_cmd = f'"{wrapper}" ' + ' '.join(f'"{a}"' for a in cmd[1:])
+            print(f"  [debug] shell_cmd: {shell_cmd}")
+            print(f"  [debug] wrapper content: {wrapper.read_text().strip()}")
+            print(f"  [debug] actual_binary exists: {actual_binary.exists()}")
+            print(f"  [debug] model file exists: {Path(cmd[2]).exists() if len(cmd) > 2 else 'n/a'}")
             with open(log_file, "w") as logf:
                 self.process = subprocess.Popen(
                     ['/bin/bash', '-c', shell_cmd],
