@@ -28,6 +28,8 @@ class KtransformersEngine(Engine):
 
     def build_command(self) -> list[str]:
         """Build ktransformers server command."""
+        from litmoe.config import expand_path
+
         # ktransformers server is started via python -m ktransformers.server.main
         # or via the kt-kernel CLI: kt run
         # Always use sys.executable so the engine subprocess runs under the
@@ -36,15 +38,18 @@ class KtransformersEngine(Engine):
         # installation (e.g. Homebrew 3.14 vs miniforge 3.12).
         cmd = [sys.executable, "-m", "ktransformers.server.main"]
 
-        # Model path (safetensors directory)
+        # Model path (safetensors directory) — expand ~ and $VARS
         if self.model.model_path:
-            cmd.extend(["--model_path", self.model.model_path])
+            if not self.model.model_path.startswith(("http://", "https://")):
+                cmd.extend(["--model_path", str(expand_path(self.model.model_path))])
+            else:
+                cmd.extend(["--model_path", self.model.model_path])
         else:
             cmd.extend(["--model_path", self.model.id])
 
-        # GGUF path (for quantized models)
+        # GGUF path (for quantized models) — expand ~ and $VARS
         if self.model.gguf_path:
-            cmd.extend(["--gguf_path", self.model.gguf_path])
+            cmd.extend(["--gguf_path", str(expand_path(self.model.gguf_path))])
 
         # GPU offload
         if self.model.n_gpu_layers > 0:

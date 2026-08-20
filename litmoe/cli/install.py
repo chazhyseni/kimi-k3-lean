@@ -112,11 +112,15 @@ LLAMA_RELEASES_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/l
 
 
 def _default_models_dir() -> Path:
-    return Path(os.environ.get("LITMOE_MODELS_DIR", Path.home() / ".litmoe" / "models"))
+    """Default models directory, with ~ and $VARS expanded."""
+    raw = os.environ.get("LITMOE_MODELS_DIR", str(Path.home() / ".litmoe" / "models"))
+    return Path(os.path.expanduser(os.path.expandvars(raw)))
 
 
 def _default_prefix() -> Path:
-    return Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
+    """Default install prefix, with ~ and $VARS expanded."""
+    raw = os.environ.get("LITMOE_PREFIX", str(Path.home() / ".local"))
+    return Path(os.path.expanduser(os.path.expandvars(raw)))
 
 
 # ---------------------------------------------------------------------------
@@ -603,7 +607,15 @@ def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path
 
 def add_model_to_config(model_name: str, engine: str, model_path: Path,
                         n_ctx: int, config_path: Path) -> None:
-    """Insert or replace a model entry in models.yaml."""
+    """Insert or replace a model entry in models.yaml.
+
+    Always writes absolute paths (with ~ and $VARS expanded) so that
+    the config file works regardless of where litmoe is run from.
+    """
+    # Expand the model path to absolute before writing
+    from litmoe.config import expand_path
+    model_path = expand_path(model_path)
+
     if config_path.exists():
         with open(config_path) as f:
             cfg = yaml.safe_load(f) or {}
@@ -666,9 +678,11 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
       litmoe install --model kimi-k3          # 594 GB MoE, 600+ GB RAM
       litmoe install --engine ktransformers   # ktransformers (Linux + NVIDIA only)
     """
-    models_dir = Path(models_dir) if models_dir else _default_models_dir()
-    prefix = Path(prefix) if prefix else _default_prefix()
-    config_path = Path(config) if config else default_config_path()
+    from litmoe.config import expand_path
+
+    models_dir = expand_path(models_dir) if models_dir else _default_models_dir()
+    prefix = expand_path(prefix) if prefix else _default_prefix()
+    config_path = expand_path(config) if config else default_config_path()
 
     # Positional targets act as shortcuts: "llamacpp", "ktransformers", "both", or a model name
     for t in targets:

@@ -13,16 +13,9 @@ import click
 import yaml
 
 from litmoe import __version__
-from litmoe.config import GatewayConfig, load_config, default_config_path
+from litmoe.config import GatewayConfig, load_config, default_config_path, expand_path
 from litmoe.engines import kt_installed, llama_installed
 from litmoe.cli.install import install_cmd
-
-
-def _warn_python_access() -> None:
-    """Check if the running Python can access model files. Print warnings if not."""
-    from litmoe.platform_utils import check_python_access
-    for msg in check_python_access():
-        click.echo(msg, err=True)
 
 
 @click.group()
@@ -38,9 +31,6 @@ def doctor():
     click.echo(f"litmoe v{__version__}")
     click.echo(f"Python: {sys.executable} ({sys.version.split()[0]})")
     click.echo()
-
-    # Check Python file access (macOS TCC issue)
-    _warn_python_access()
 
     from litmoe.platform_utils import is_macos, get_total_memory_bytes
 
@@ -189,6 +179,10 @@ def init():
 
     click.echo(f"Created {cfg_path}")
     click.echo("Edit model paths then run: litmoe serve")
+    click.echo()
+    click.echo("Tip: Use absolute paths in model_path fields. If you use ~")
+    click.echo("     it will be expanded automatically, but absolute paths")
+    click.echo("     avoid any ambiguity.")
 
 
 @cli.command()
@@ -197,12 +191,7 @@ def init():
 @click.option("--log-dir", default="logs", help="Directory for engine logs")
 def serve(config, log_dir):
     """Start the gateway with all configured engines."""
-    # Check that the running Python can access model files.
-    # On macOS with multiple Python installations, a Homebrew Python
-    # may have TCC restrictions preventing file access in ~/.litmoe/.
-    _warn_python_access()
-
-    cfg_path = config or str(default_config_path())
+    cfg_path = str(expand_path(config)) if config else str(default_config_path())
     if not Path(cfg_path).exists():
         click.echo(f"Error: config not found: {cfg_path}", err=True)
         click.echo("Run 'litmoe init' or 'litmoe install --model X' to create one.", err=True)
@@ -225,7 +214,7 @@ def status(config):
     """Show running gateway and engines."""
     import httpx
 
-    cfg_path = config or str(default_config_path())
+    cfg_path = str(expand_path(config)) if config else str(default_config_path())
     click.echo(f"Config: {cfg_path}")
     if not Path(cfg_path).exists():
         click.echo("  (no config)")

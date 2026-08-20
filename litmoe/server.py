@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from litmoe.config import GatewayConfig, ModelEntry
 from litmoe.engines import make_engine, Engine
 from litmoe.platform_utils import get_total_memory_bytes, is_macos
+from litmoe.config import expand_path
 
 logger = logging.getLogger(__name__)
 

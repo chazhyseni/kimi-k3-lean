@@ -43,7 +43,9 @@ class LlamaCppEngine(Engine):
         set by start() are passed directly to the process (not through
         a bash wrapper that may overwrite or lose them).
         """
-        prefix = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
+        # Expand ~ and $VARS in LITMOE_PREFIX
+        raw_prefix = os.environ.get("LITMOE_PREFIX", str(Path.home() / ".local"))
+        prefix = Path(os.path.expanduser(os.path.expandvars(raw_prefix)))
 
         # First: look for the direct binary in known install locations
         # Prebuilt binaries are in subdirectories like prebuilt/llama-b10516/
@@ -86,15 +88,18 @@ class LlamaCppEngine(Engine):
         cmd = [binary]
 
         # Model: GGUF path takes priority, then HF repo, then local path
+        # Expand ~ and $VARS in file paths — Python doesn't do this automatically
+        # like the shell does, which causes FileNotFoundError on macOS.
+        from litmoe.config import expand_path
+
         if self.model.gguf_path:
-            cmd.extend(["-m", self.model.gguf_path])
+            cmd.extend(["-m", str(expand_path(self.model.gguf_path))])
         elif self.model.model_path and self.model.model_path.startswith(("http://", "https://")):
             # HF repo URL: use -hf flag
             cmd.extend(["-hf", self.model.model_path])
         elif self.model.model_path:
-            # Local directory: could be HF safetensors or GGUF
-            # llama.cpp auto-detects from the directory contents
-            cmd.extend(["-m", self.model.model_path])
+            # Local directory or file: expand ~ and $VARS
+            cmd.extend(["-m", str(expand_path(self.model.model_path))])
         else:
             raise ValueError(f"{self.model.id}: model_path or gguf_path required for llama.cpp")
 

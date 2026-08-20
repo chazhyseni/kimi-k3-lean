@@ -250,9 +250,10 @@ def find_llama_server_binary(prefix: Path | None = None) -> Path | None:
     if found:
         return Path(found)
 
-    # Check common install locations
     if prefix is None:
-        prefix = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local"))
+        # Expand ~ and $VARS in LITMOE_PREFIX env var
+        raw = os.environ.get("LITMOE_PREFIX", str(Path.home() / ".local"))
+        prefix = Path(os.path.expanduser(os.path.expandvars(raw)))
 
     # Direct binary locations (preferred over wrapper scripts)
     direct_candidates = [
@@ -290,58 +291,3 @@ def find_llama_server_binary(prefix: Path | None = None) -> Path | None:
             return c
 
     return None
-
-
-def check_python_access() -> list[str]:
-    """Check that the running Python interpreter can access ~/.litmoe/models/.
-
-    On macOS, Homebrew Python installations (especially Python 3.14+) may have
-    TCC restrictions that prevent file access outside certain directories.
-    This check identifies such cases so we can warn the user early.
-
-    Returns a list of warning messages (empty list = no problems).
-    """
-    warnings: list[str] = []
-
-    models_dir = Path(os.environ.get(
-        "LITMOE_MODELS_DIR", Path.home() / ".litmoe" / "models"
-    ))
-
-    if not models_dir.exists():
-        # No models downloaded yet — can't check access.
-        # The access problem only manifests when there are files to read.
-        return warnings
-
-    # Test: can we list the directory and read at least one file?
-    try:
-        entries = list(models_dir.iterdir())
-        if entries:
-            # Try to open the first file (read first byte) to verify read access
-            for entry in entries:
-                if entry.is_file():
-                    with open(entry, "rb") as f:
-                        f.read(1)
-                    break
-                elif entry.is_dir():
-                    # Try to list a subdirectory
-                    list(entry.iterdir())
-                    break
-    except PermissionError:
-        warnings.append(
-            f"PERMISSION ERROR: Python at {sys.executable} cannot read files in "
-            f"{models_dir}.\n"
-            f"  This is likely a macOS TCC restriction on this Python installation.\n"
-            f"  Solution: install and run litmoe with the Python that has access:\n"
-            f"    {sys.executable} -m pip install -e .\n"
-            f"    {sys.executable} -m litmoe install --model X\n"
-            f"    {sys.executable} -m litmoe serve\n"
-            f"  Or use a Python without TCC restrictions (conda, miniforge, pyenv, etc.)."
-        )
-    except OSError as e:
-        warnings.append(
-            f"WARNING: Error accessing {models_dir}: {e}\n"
-            f"  Python: {sys.executable}\n"
-            f"  This may cause model loading to fail."
-        )
-
-    return warnings
