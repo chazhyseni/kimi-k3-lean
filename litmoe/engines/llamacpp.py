@@ -140,7 +140,12 @@ class LlamaCppEngine(Engine):
             # that were built/installed before the fix was added
             from litmoe.platform_utils import is_macos
             if is_macos():
+                # cmd[0] might be a wrapper script — resolve to actual binary
                 binary_path = Path(cmd[0])
+                if lib_dir:
+                    actual_binary = lib_dir / "llama-server"
+                    if actual_binary.exists():
+                        binary_path = actual_binary
                 fix_macos_dylib_paths(binary_path, Path(lib_dir))
 
         log_dir = log_dir or Path("logs")
