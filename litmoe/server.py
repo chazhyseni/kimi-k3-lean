@@ -43,6 +43,14 @@ class Gateway:
                 ],
             }
 
+        @self.app.get("/v1/models/{model_id}")
+        async def get_model(model_id: str):
+            for m in self.config.models:
+                if m.id == model_id:
+                    return {"id": m.id, "object": "model",
+                            "owned_by": "litmoe", "engine": m.engine}
+            raise HTTPException(404, f"Model '{model_id}' not found")
+
         @self.app.get("/health")
         async def health():
             return {
@@ -219,13 +227,12 @@ class Gateway:
 
 
 async def _stream_response(url: str, body: bytes, timeout: httpx.Timeout, headers: dict | None = None):
-    """Stream SSE responses from upstream engine. Owns the httpx client lifecycle."""
+    """Stream SSE responses from upstream engine. Raw byte passthrough preserves SSE format."""
     fwd_headers = headers or {"content-type": "application/json"}
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", url, content=body, headers=fwd_headers) as r:
-            async for line in r.aiter_lines():
-                if line:
-                    yield line.encode() + b"\n"
+            async for chunk in r.aiter_bytes():
+                yield chunk
 
 
 def _anthropic_to_openai(payload: dict) -> dict:
