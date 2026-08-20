@@ -103,16 +103,20 @@ class Gateway:
         stream = payload.get("stream", False)
         timeout = httpx.Timeout(connect=10.0, read=600.0, write=600.0, pool=10.0)
 
+        # Strip Authorization header — the gateway handles auth, not the engine.
+        # llama-server rejects Bearer tokens that don't match its own key.
+        fwd_headers = {"content-type": "application/json"}
+
         if stream:
             # For streaming, create the client outside async with so it
             # stays open for the duration of the StreamingResponse iterator
             return StreamingResponse(
-                _stream_response(target_url, send_body, timeout),
+                _stream_response(target_url, send_body, timeout, fwd_headers),
                 media_type="text/event-stream",
             )
         else:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                r = await client.post(target_url, content=send_body, headers={"content-type": "application/json"})
+                r = await client.post(target_url, content=send_body, headers=fwd_headers)
                 return JSONResponse(content=r.json(), status_code=r.status_code)
 
     def load_engines(self, log_dir: str | None = None) -> None:
@@ -137,10 +141,11 @@ class Gateway:
             engine.stop()
 
 
-async def _stream_response(url: str, body: bytes, timeout: httpx.Timeout):
+async def _stream_response(url: str, body: bytes, timeout: httpx.Timeout, headers: dict | None = None):
     """Stream responses from upstream engine. Owns the httpx client lifecycle."""
+    fwd_headers = headers or {"content-type": "application/json"}
     async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("POST", url, content=body, headers={"content-type": "application/json"}) as r:
+        async with client.stream("POST", url, content=body, headers=fwd_headers) as r:
             async for chunk in r.aiter_bytes():
                 yield chunk
 
