@@ -263,17 +263,22 @@ def _install_llamacpp_source(prefix: Path) -> Path:
 
         # Copy binary
         shutil.copy2(str(server_bin), str(dest_dir / "llama-server"))
-        # Copy shared libs
-        for so in build_bin.glob("lib*.so*"):
+        # Copy shared libs (.so on Linux, .dylib on macOS)
+        for so in list(build_bin.glob("lib*.so*")) + list(build_bin.glob("lib*.dylib*")):
             shutil.copy2(str(so), str(dest_dir))
 
-        # Create a wrapper script that sets LD_LIBRARY_PATH
+        # Create a wrapper script that sets library path
+        # (LD_LIBRARY_PATH on Linux, DYLD_LIBRARY_PATH on macOS)
         bin_dir = prefix / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
+        if platform.system() == "Darwin":
+            lib_env = f"DYLD_LIBRARY_PATH={dest_dir}:$DYLD_LIBRARY_PATH"
+        else:
+            lib_env = f"LD_LIBRARY_PATH={dest_dir}:$LD_LIBRARY_PATH"
         wrapper = bin_dir / "llama-server"
         wrapper.write_text(
             f"#!/bin/bash\n"
-            f"export LD_LIBRARY_PATH={dest_dir}:$LD_LIBRARY_PATH\n"
+            f"export {lib_env}\n"
             f"exec {dest_dir}/llama-server \"$@\"\n"
         )
         wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
