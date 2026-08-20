@@ -98,6 +98,14 @@ KNOWN_MODELS = {
         "size_gb": {"Q2_K": 18, "Q3_K_M": 24, "Q4_K_M": 30, "Q5_K_M": 35, "Q6_K": 40, "Q8_0": 52},
         "file_layout": "root",
     },
+    "qwen3.8-9b-distill": {
+        "hf_repo": "empero-ai/Qwen3.8-9B-Distill-GGUF",
+        "engine": "llamacpp",
+        "quants": ["Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0", "BF16"],
+        "default_quant": "Q4_K_M",
+        "size_gb": {"Q4_K_M": 6, "Q5_K_M": 7, "Q6_K": 8, "Q8_0": 10, "BF16": 18},
+        "file_layout": "root",
+    },
 }
 
 LLAMA_RELEASES_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
@@ -478,6 +486,7 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
       litmoe install --model llama-4-scout    # 65 GB MoE, 96 GB RAM
       litmoe install --model deepseek-v4-flash # 83 GB MoE, 96 GB RAM
       litmoe install --model kimi-linear-48b   # 30 GB MoE (3B active), 32 GB RAM
+      litmoe install --model qwen3.8-9b-distill # 6 GB dense, 16 GB laptop (interactive on CPU)
       litmoe install --model minimax-m3       # 128 GB MoE, 128 GB RAM
       litmoe install --model kimi-k3          # 594 GB MoE, 600+ GB RAM
       litmoe install --engine ktransformers   # ktransformers (Linux + NVIDIA only)

@@ -7,17 +7,18 @@ port: 8000
 api_key: null
 
 models:
-  # Kimi-Linear-48B (48B MoE, 3B active, KDA architecture, 30 GB Q4_K_M)
-  # Same architecture as Kimi-K3 but 50x smaller — actually usable on CPU
-  - id: kimi-linear-48b
+  # Qwen3.8-9B-Distill (9B dense, distilled from Qwen3.8-2.4T, 6 GB Q4_K_M)
+  # Dense model — no MoE overhead, interactive speed on CPU
+  - id: qwen3.8-9b-distill
     engine: llamacpp
-    model_path: /models/kimi-linear-48b/Q4_K_M/Kimi-Linear-48B-A3B-Instruct.Q4_K_M.gguf
+    model_path: /models/qwen3.8-9b-distill/Q4_K_M/Qwen3.8-9B-Q4_K_M.gguf
     n_gpu_layers: 0
     n_ctx: 16384
 
-  # DeepSeek-V4-Flash (83 GB IQ1_S, ~150B MoE — loads but 0.33 t/s on CPU)
-  # - id: deepseek-v4-flash
+  # Kimi-Linear-48B (48B MoE, 3B active, 30 GB Q4_K_M)
+  # Loads but 0.58 t/s on CPU — impractical for chat
+  # - id: kimi-linear-48b
   #   engine: llamacpp
-  #   model_path: /models/deepseek-v4-flash/UD-IQ1_S/DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf
+  #   model_path: /models/kimi-linear-48b/Q4_K_M/Kimi-Linear-48B-A3B-Instruct.Q4_K_M.gguf
   #   n_gpu_layers: 0
   #   n_ctx: 16384
