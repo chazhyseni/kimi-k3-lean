@@ -18,8 +18,118 @@ from fastapi.responses import StreamingResponse, JSONResponse
 
 from litmoe.config import GatewayConfig, ModelEntry
 from litmoe.engines import make_engine, Engine
+from litmoe.platform_utils import get_total_memory_bytes, is_macos
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Model-native context sizes and KV cache rates
+# ---------------------------------------------------------------------------
+
+NATIVE_CTX = {
+    "deepseek-v4-flash": 131072,   # 128K MLA
+    "kimi-linear-48b": 1048576,     # 1M KDA+MLA
+    "kimi-k3": 262144,              # 256K MLA
+    "qwen3.8-2.4t": 262144,         # 256K (1M with YaRN)
+    "qwen3.8-9b-distill": 131072,   # 128K (1M with YaRN)
+    "minimax-m3": 1048576,          # 1M
+    "gemma-4-12b": 131072,          # 128K
+    "gemma-4-31b": 131072,          # 128K
+    "llama-4-scout": 10485760,     # 10M
+}
+
+# KV cache rate per token (bytes/token) — rough per-model estimates
+# Format: "model_id": (kv_at_native_ctx_gb, native_ctx)
+KV_RATES = {
+    "deepseek-v4-flash": 23.1e9 / 131072,
+    "kimi-linear-48b": 15.0e9 / 1048576,
+    "kimi-k3": 49.9e9 / 262144,
+    "qwen3.8-2.4t": 1580e9 / 262144,
+    "qwen3.8-9b-distill": 17.2e9 / 131072,
+    "minimax-m3": 386.5e9 / 1048576,
+    "gemma-4-12b": 85.9e9 / 131072,
+    "gemma-4-31b": 86.0e9 / 131072,
+    "llama-4-scout": 206.2e9 / 10485760,
+}
+
+# Model sizes in GB (for memory fit calculation)
+MODEL_SIZES_GB = {
+    "kimi-k3": {"UD-IQ1_S": 594, "UD-IQ1_M": 649, "UD-Q2_K_XL": 861, "UD-Q4_K_XL": 1509},
+    "qwen3.8": {"UD-IQ1_S": 508, "UD-IQ1_M": 564, "UD-Q1_0": 397, "UD-IQ2_XXS": 657},
+    "minimax-m3": {"UD-IQ1_M": 128, "UD-IQ2_M": 134, "UD-Q2_K_XL": 143, "UD-Q4_K_M": 264},
+    "deepseek-v4-flash": {"UD-IQ1_S": 83, "UD-IQ1_M": 87, "UD-Q2_K_XL": 97, "UD-Q4_K_XL": 155},
+    "gemma-4-31b": {"UD-IQ2_XXS": 9, "UD-IQ2_M": 11, "Q4_K_M": 18, "Q8_0": 33},
+    "gemma-4-12b": {"UD-IQ2_M": 4, "Q4_K_M": 7, "Q8_0": 13},
+    "llama-4-scout": {"Q3_K_M": 52, "Q4_K_M": 65, "Q6_K": 88, "Q8_0": 115},
+    "kimi-linear-48b": {"Q2_K": 18, "Q3_K_M": 24, "Q4_K_M": 30, "Q5_K_M": 35, "Q6_K": 40, "Q8_0": 52},
+    "qwen3.8-9b-distill": {"Q4_K_M": 6, "Q5_K_M": 7, "Q6_K": 8, "Q8_0": 10},
+}
+
+
+def compute_memory_aware_ctx(model_id: str, n_ctx: int) -> int:
+    """Compute the optimal context size for a model given available memory.
+
+    If the model's native context + KV cache + model weights exceeds available
+    RAM, reduce the context to fit. Otherwise, keep the native context.
+
+    Works on both Linux (sysconf) and macOS (sysctl hw.memsize).
+    """
+    total_mem = get_total_memory_bytes()
+    if total_mem is None:
+        # Can't detect memory — keep what we have
+        return n_ctx
+
+    total_mem_gb = total_mem / 1e9
+
+    # Get native context for this model
+    native_ctx = NATIVE_CTX.get(model_id, 131072)
+
+    # If n_ctx is already reasonable (>= 16384), check if it fits
+    if n_ctx >= 16384:
+        target_ctx = n_ctx
+    else:
+        target_ctx = native_ctx
+
+    # Get KV cache rate (bytes per token)
+    kv_rate = KV_RATES.get(model_id, 17.2e9 / 131072)  # default: ~17 GB at 128K
+
+    # Estimate model size from MODEL_SIZES_GB — use default quant if available
+    model_size_gb = 0
+    if model_id in MODEL_SIZES_GB:
+        quants = MODEL_SIZES_GB[model_id]
+        model_size_gb = min(quants.values())  # conservative: smallest quant
+
+    # KV cache size at target context
+    kv_gb = (kv_rate * target_ctx) / 1e9
+
+    # Budget: 90% of total RAM minus 3 GB overhead
+    avail_gb = total_mem_gb * 0.9 - 3
+    needed_gb = model_size_gb + kv_gb
+
+    if needed_gb <= avail_gb:
+        return target_ctx
+
+    # Need to reduce context
+    max_kv_gb = avail_gb - model_size_gb - 1  # 1 GB headroom
+    if max_kv_gb <= 0:
+        logger.warning(
+            "Model %s (%.0f GB) may not fit in %.0f GB RAM",
+            model_id, model_size_gb, total_mem_gb,
+        )
+        return max(target_ctx, 8192)  # keep minimum viable
+
+    # Calculate max context that fits
+    max_ctx = int((max_kv_gb * 1e9) / kv_rate)
+    # Round down to nearest 4096
+    max_ctx = (max_ctx // 4096) * 4096
+    max_ctx = max(max_ctx, 8192)  # minimum 8K
+
+    logger.info(
+        "Model %s: reduced context from %d to %d to fit %.0f GB model + KV in %.0f GB RAM",
+        model_id, target_ctx, max_ctx, model_size_gb, total_mem_gb,
+    )
+    return max_ctx
 
 
 class Gateway:
@@ -49,7 +159,7 @@ class Gateway:
                 if m.id == model_id:
                     return {"id": m.id, "object": "model",
                             "owned_by": "litmoe", "engine": m.engine}
-            raise HTTPException(404, f"Model '{model_id}' not found")
+            raise HTTPException(404, f"Model \'{model_id}\' not found")
 
         @self.app.get("/health")
         async def health():
@@ -90,7 +200,7 @@ class Gateway:
         # Determine model
         model_id = payload.get("model")
         if not model_id:
-            raise HTTPException(400, "missing 'model' field")
+            raise HTTPException(400, "missing \'model\' field")
 
         engine = self.engines.get(model_id)
         if not engine:
@@ -135,59 +245,19 @@ class Gateway:
             # Auto-fix stale context sizes — set to model's native context
             # Also check if model + KV cache fits in available memory
             if model.n_ctx and model.n_ctx < 16384:
-                model_id = model.id or ""
-                native_ctx = {
-                    "deepseek-v4-flash": 131072,   # 128K MLA
-                    "kimi-linear-48b": 1048576,     # 1M KDA+MLA
-                    "kimi-k3": 262144,              # 256K MLA
-                    "qwen3.8-2.4t": 262144,         # 256K (1M with YaRN)
-                    "qwen3.8-9b-distill": 131072,   # 128K (1M with YaRN)
-                    "minimax-m3": 1048576,          # 1M
-                    "gemma-4-12b": 131072,          # 128K
-                    "gemma-4-31b": 131072,          # 128K
-                    "llama-4-scout": 10485760,     # 10M
-                }
-                new_ctx = native_ctx.get(model_id, 131072)  # default 128K
-
-                # Check memory fit
-                import os as _os
-                try:
-                    total_mem = _os.sysconf("SC_PAGE_SIZE") * _os.sysconf("SC_PHYS_PAGES")
-                    total_mem_gb = total_mem / 1e9
-                    # KV cache rate per token (bytes) — rough per-model estimates
-                    kv_rates = {
-                        "deepseek-v4-flash": 23.1 / 131072,
-                        "kimi-linear-48b": 15.0 / 1048576,
-                        "kimi-k3": 49.9 / 262144,
-                        "qwen3.8-9b-distill": 17.2 / 131072,
-                        "minimax-m3": 386.5 / 1048576,
-                        "gemma-4-12b": 85.9 / 131072,
-                        "gemma-4-31b": 86.0 / 131072,
-                        "llama-4-scout": 206.2 / 10485760,
-                    }
-                    kv_rate = kv_rates.get(model_id, 17.2 / 131072)
-                    kv_gb = kv_rate * new_ctx
-                    # Estimate model size from config — we don't know exact
-                    # but 90% of memory minus 3 GB overhead is the budget
-                    avail_gb = total_mem_gb * 0.9 - 3
-                    if kv_gb > avail_gb:
-                        # Reduce context to fit (assume model is already loaded)
-                        max_ctx = int(avail_gb / kv_rate)
-                        new_ctx = max((max_ctx // 4096) * 4096, 8192)
-                except (ValueError, OSError, AttributeError):
-                    pass
+                new_ctx = compute_memory_aware_ctx(model.id, model.n_ctx)
 
                 logger.warning(
                     "Model %s has n_ctx=%d (too small), setting to %d",
                     model.id, model.n_ctx, new_ctx
                 )
                 model.n_ctx = new_ctx
-                # Also persist the fix to models.yaml so it doesn't need auto-fixing every run
+
+                # Also persist the fix to models.yaml so it doesn't need
+                # auto-fixing every run
                 try:
                     import yaml as _yaml
-                    config_path = Path(_yaml.__file__).parent  # just to ensure yaml is imported
                     from litmoe.config import load_config, GatewayConfig
-                    # Find the config file path
                     import os
                     cfg_path = os.environ.get("LITMOE_CONFIG")
                     if not cfg_path:
@@ -207,6 +277,12 @@ class Gateway:
                         logger.info("Persisted n_ctx=%d for %s to %s", new_ctx, model.id, cfg_path)
                 except Exception:
                     pass  # best effort — runtime fix is what matters
+            elif not model.n_ctx or model.n_ctx == 0:
+                # No context set — compute memory-aware default
+                new_ctx = compute_memory_aware_ctx(model.id, 0)
+                model.n_ctx = new_ctx
+                logger.info("Model %s: set n_ctx=%d (memory-aware default)", model.id, new_ctx)
+
             logger.info("Loading %s via %s...", model.id, model.engine)
             engine = make_engine(model)
             # Assign unique port: first model 8081, second 8082, etc.
@@ -227,12 +303,33 @@ class Gateway:
 
 
 async def _stream_response(url: str, body: bytes, timeout: httpx.Timeout, headers: dict | None = None):
-    """Stream SSE responses from upstream engine. Raw byte passthrough preserves SSE format."""
+    """Stream SSE responses from upstream engine.
+
+    Uses raw byte passthrough (aiter_bytes) to preserve the exact SSE format
+    from llama-server. This is critical — any line-based processing breaks
+    the chunked transfer encoding and causes "incomplete chunked read" errors
+    in clients like Hermes.
+
+    The async client is kept alive for the full duration of the stream by
+    managing it manually (not using async with, which would close it early).
+    """
     fwd_headers = headers or {"content-type": "application/json"}
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    client = httpx.AsyncClient(timeout=timeout)
+    try:
+        # Use stream() which keeps the connection open for the full response
         async with client.stream("POST", url, content=body, headers=fwd_headers) as r:
+            # If the upstream returned an error, pass it through
+            if r.status_code >= 400:
+                yield await r.aread()
+                return
+            # Raw byte passthrough — do NOT process lines, just forward bytes
             async for chunk in r.aiter_bytes():
                 yield chunk
+    except httpx.RequestError as e:
+        logger.error("Stream error: %s", e)
+        yield b"data: {\"error\": \"" + str(e).encode() + b"\"}\n\n"
+    finally:
+        await client.aclose()
 
 
 def _anthropic_to_openai(payload: dict) -> dict:
@@ -261,8 +358,8 @@ def _anthropic_to_openai(payload: dict) -> dict:
                 if block.get("type") == "text":
                     text_parts.append(block.get("text", ""))
                 elif block.get("type") == "image":
-                    # Pass through as data URL or skip
-                    text_parts.append(f"[image: {block.get('source', {}).get('type', 'unknown')}]")
+                    src_type = block.get('source', {}).get('type', 'unknown')
+                    text_parts.append(f"[image: {src_type}]")
             messages.append({"role": role, "content": "\n".join(text_parts)})
 
     out = {

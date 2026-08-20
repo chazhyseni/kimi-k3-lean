@@ -207,21 +207,60 @@ def _install_llamacpp_prebuilt(prefix: Path) -> Path:
         raise RuntimeError(f"llama-server not found in extracted archive at {dest_dir}")
     server.chmod(server.stat().st_mode | stat.S_IEXEC)
 
-    # Symlink into prefix/bin for PATH discovery
-    bin_dir = prefix / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    link = bin_dir / "llama-server"
-    if link.exists() or link.is_symlink():
-        link.unlink()
-    link.symlink_to(server)
+    # Fix dylib paths on macOS (prebuilt binaries may have stale rpaths)
+    if platform.system() == "Darwin":
+        from litmoe.platform_utils import fix_macos_dylib_paths
+        click.echo("  Fixing macOS dylib paths...")
+        fix_macos_dylib_paths(server, server.parent)
+
+        # Also copy OpenSSL dylibs if needed
+        import glob as _glob
+        for ssl_lib in ["libssl.3.dylib", "libcrypto.3.dylib",
+                        "libssl.35.dylib", "libcrypto.35.dylib"]:
+            if not (server.parent / ssl_lib).exists():
+                for search in ["/opt/homebrew/lib", "/usr/local/lib",
+                               "/opt/homebrew/opt/openssl@3/lib"]:
+                    found = _glob.glob(f"{search}/{ssl_lib}")
+                    if found:
+                        shutil.copy2(found[0], str(server.parent / ssl_lib))
+                        break
+
+        # Create wrapper script that sets DYLD_FALLBACK_LIBRARY_PATH
+        # (not stripped by SIP for non-restricted binaries)
+        bin_dir = prefix / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        wrapper = bin_dir / "llama-server"
+        if wrapper.exists() or wrapper.is_symlink():
+            wrapper.unlink()
+        wrapper.write_text(
+            f"#!/bin/bash\n"
+            f"export DYLD_FALLBACK_LIBRARY_PATH={server.parent}:$DYLD_FALLBACK_LIBRARY_PATH\n"
+            f"export DYLD_LIBRARY_PATH={server.parent}:$DYLD_LIBRARY_PATH\n"
+            f"exec {server} \"$@\"\n"
+        )
+        wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
+    else:
+        # Symlink into prefix/bin for PATH discovery (Linux)
+        bin_dir = prefix / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        link = bin_dir / "llama-server"
+        if link.exists() or link.is_symlink():
+            link.unlink()
+        link.symlink_to(server)
 
     click.echo(f"  llama-server installed: {server}")
     return dest_dir
 
 
 def _install_llamacpp_source(prefix: Path) -> Path:
-    """Build llama.cpp from source (for systems with glibc < 2.34)."""
+    """Build llama.cpp from source (for systems with glibc < 2.34 or macOS).
+
+    On macOS, builds with CMAKE_INSTALL_RPATH baked in AND rewrites all
+    @rpath references to absolute paths post-build so the binary works
+    without any DYLD_* environment variables.
+    """
     import tempfile
+    from litmoe.platform_utils import is_macos, fix_macos_dylib_paths
 
     with tempfile.TemporaryDirectory() as tmpdir:
         click.echo(f"  Cloning llama.cpp to {tmpdir}...")
@@ -232,13 +271,34 @@ def _install_llamacpp_source(prefix: Path) -> Path:
         if clone.returncode != 0:
             raise RuntimeError(f"git clone failed: {clone.stderr.strip()[:200]}")
 
+        # Install directory — must be an absolute path for rpath to work
+        dest_dir = (prefix / "lib" / "llama.cpp" / "local").resolve()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build with rpath baked in at compile time
+        cmake_args = [
+            "cmake", "-B", "build",
+            "-DGGML_CUDA=OFF", "-DGGML_BLAS=ON",
+            "-DGGML_BLAS_VENDOR=OpenBLAS",
+            "-DGGML_NATIVE=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+        ]
+
+        if is_macos():
+            # Metal backend for Apple Silicon
+            cmake_args.extend([
+                "-DGGML_METAL=ON",
+                # Bake rpath into the binary at build time so it finds
+                # its dylibs in the install dir without any env vars.
+                f"-DCMAKE_INSTALL_RPATH={dest_dir}",
+                "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
+                # Also set the build rpath for intermediate linking
+                f"-DCMAKE_BUILD_RPATH={dest_dir}",
+            ])
+
         click.echo("  Building (cmake + make, CPU-only with BLAS, this takes a few minutes)...")
         cmake = subprocess.run(
-            ["cmake", "-B", "build",
-             "-DGGML_CUDA=OFF", "-DGGML_BLAS=ON",
-             "-DGGML_BLAS_VENDOR=OpenBLAS",
-             "-DGGML_NATIVE=ON",
-             "-DCMAKE_BUILD_TYPE=Release"],
+            cmake_args,
             cwd=tmpdir, capture_output=True, text=True, timeout=120,
         )
         if cmake.returncode != 0:
@@ -253,9 +313,6 @@ def _install_llamacpp_source(prefix: Path) -> Path:
             raise RuntimeError("Build failed. See output above.")
 
         # Install: copy binary + shared libs
-        dest_dir = prefix / "lib" / "llama.cpp" / "local"
-        dest_dir.mkdir(parents=True, exist_ok=True)
-
         build_bin = Path(tmpdir) / "build" / "bin"
         server_bin = build_bin / "llama-server"
         if not server_bin.exists():
@@ -267,18 +324,14 @@ def _install_llamacpp_source(prefix: Path) -> Path:
         for so in list(build_bin.glob("lib*.so*")) + list(build_bin.glob("lib*.dylib*")):
             shutil.copy2(str(so), str(dest_dir))
 
-        # Fix rpath on macOS so the binary finds its dylibs without a wrapper
-        if platform.system() == "Darwin":
-            try:
-                subprocess.run(
-                    ["install_name_tool", "-add_rpath", str(dest_dir),
-                     str(dest_dir / "llama-server")],
-                    capture_output=True, timeout=10,
-                )
-            except Exception:
-                pass  # best effort
+        # Also copy any .so/.dylib from subdirectories (cmake may put them elsewhere)
+        for sub in list(build_bin.rglob("lib*.so*")) + list(build_bin.rglob("lib*.dylib*")):
+            target = dest_dir / sub.name
+            if not target.exists():
+                shutil.copy2(str(sub), str(target))
 
-            # Copy OpenSSL if the binary links against it (Homebrew path)
+        if is_macos():
+            # Copy OpenSSL dylibs from Homebrew if the binary links against them
             import glob as _glob
             for ssl_lib in ["libssl.3.dylib", "libcrypto.3.dylib",
                             "libssl.35.dylib", "libcrypto.35.dylib"]:
@@ -290,20 +343,38 @@ def _install_llamacpp_source(prefix: Path) -> Path:
                             shutil.copy2(found[0], str(dest_dir / ssl_lib))
                             break
 
-        # Create a wrapper script that sets library path
-        # (LD_LIBRARY_PATH on Linux, DYLD_LIBRARY_PATH on macOS)
+            # Nuclear fix: rewrite ALL @rpath and @loader_path references
+            # in the binary and every .dylib to absolute paths.
+            # This makes the binary fully self-contained — no DYLD_* env needed.
+            click.echo("  Fixing dylib paths (rewriting @rpath to absolute)...")
+            binary_path = dest_dir / "llama-server"
+            if fix_macos_dylib_paths(binary_path, dest_dir):
+                click.echo("  Dylib paths fixed successfully.")
+            else:
+                click.echo("  WARNING: could not fix dylib paths, will rely on env vars.")
+
+        # Create a wrapper script that sets library path as a fallback.
+        # On macOS, we set BOTH DYLD_LIBRARY_PATH and DYLD_FALLBACK_LIBRARY_PATH.
+        # DYLD_FALLBACK_LIBRARY_PATH is NOT stripped by SIP for non-restricted
+        # binaries, making it the reliable mechanism.
         bin_dir = prefix / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
-        if platform.system() == "Darwin":
-            lib_env = f"DYLD_LIBRARY_PATH={dest_dir}:$DYLD_LIBRARY_PATH"
+
+        if is_macos():
+            wrapper = bin_dir / "llama-server"
+            wrapper.write_text(
+                f"#!/bin/bash\n"
+                f"export DYLD_FALLBACK_LIBRARY_PATH={dest_dir}:$DYLD_FALLBACK_LIBRARY_PATH\n"
+                f"export DYLD_LIBRARY_PATH={dest_dir}:$DYLD_LIBRARY_PATH\n"
+                f"exec {dest_dir}/llama-server \"$@\"\n"
+            )
         else:
-            lib_env = f"LD_LIBRARY_PATH={dest_dir}:$LD_LIBRARY_PATH"
-        wrapper = bin_dir / "llama-server"
-        wrapper.write_text(
-            f"#!/bin/bash\n"
-            f"export {lib_env}\n"
-            f"exec {dest_dir}/llama-server \"$@\"\n"
-        )
+            wrapper = bin_dir / "llama-server"
+            wrapper.write_text(
+                f"#!/bin/bash\n"
+                f"export LD_LIBRARY_PATH={dest_dir}:$LD_LIBRARY_PATH\n"
+                f"exec {dest_dir}/llama-server \"$@\"\n"
+            )
         wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
 
         click.echo(f"  llama-server built and installed: {dest_dir}/llama-server")
@@ -434,18 +505,35 @@ def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path
         local_dir=str(dest),
     )
 
-    # snapshot_download may nest files under a subdirectory matching the
-    # allow_pattern. Flatten any nesting so GGUFs are directly in dest/.
-    for nested_dir in dest.iterdir():
-        if nested_dir.is_dir() and nested_dir != dest:
-            # Move files up from nested directory
-            for item in nested_dir.iterdir():
-                target = dest / item.name
-                if target.exists():
-                    target.unlink()
-                shutil.move(str(item), str(target))
-            nested_dir.rmdir()
-            click.echo(f"  Flattened nested directory: {nested_dir.name}/")
+    # snapshot_download may nest files under subdirectories matching the
+    # allow_pattern or repo structure. Recursively flatten ALL nested dirs
+    # so GGUFs are directly in dest/.
+    def _flatten_dir(d: Path, depth: int = 0) -> None:
+        """Recursively move all files from subdirs to d, then remove subdirs."""
+        if depth > 10:  # safety limit
+            return
+        for item in list(d.iterdir()):
+            if item.is_dir():
+                # Recurse into subdirectory first
+                _flatten_dir(item, depth + 1)
+                # Now move all files up (the subdir should only have files left)
+                for sub_item in list(item.iterdir()):
+                    target = d / sub_item.name
+                    if target.exists():
+                        if target.is_file():
+                            target.unlink()
+                        else:
+                            shutil.rmtree(str(target))
+                    shutil.move(str(sub_item), str(target))
+                # Remove the now-empty directory
+                try:
+                    item.rmdir()
+                except OSError:
+                    pass  # not empty or permission issue
+                if depth == 0:
+                    click.echo(f"  Flattened nested directory: {item.name}/")
+
+    _flatten_dir(dest)
 
     # Find the first GGUF shard — llama-server needs a file path, not a directory
     gguf_files = sorted(dest.glob("*.gguf"))
@@ -597,11 +685,9 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
 
             # Check if model + KV cache fits in available memory.
             # If not, reduce context to what fits.
-            import os as _os
-            try:
-                total_mem = _os.sysconf("SC_PAGE_SIZE") * _os.sysconf("SC_PHYS_PAGES")
-            except (ValueError, OSError, AttributeError):
-                total_mem = None
+            # Uses platform_utils for cross-platform memory detection.
+            from litmoe.platform_utils import get_total_memory_bytes
+            total_mem = get_total_memory_bytes()
 
             if total_mem:
                 total_mem_gb = total_mem / 1e9
