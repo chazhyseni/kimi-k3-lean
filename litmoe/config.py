@@ -16,7 +16,7 @@ class ModelEntry(BaseModel):
     model_path: str
     gguf_path: str | None = None
     n_gpu_layers: int = -1
-    n_ctx: int = 4096
+    n_ctx: int = 32768
     extra_args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
 

@@ -131,14 +131,14 @@ def init():
                 "engine": "llamacpp",
                 "model_path": "unsloth/Kimi-K3-GGUF:UD-IQ1_S",
                 "n_gpu_layers": -1,
-                "n_ctx": 4096,
+                "n_ctx": 32768,
             },
             {
                 "id": "qwen3.8-2.4t",
                 "engine": "llamacpp",
                 "model_path": "unsloth/Qwen3.8-2.4T-A95B-GGUF:UD-IQ1_S",
                 "n_gpu_layers": -1,
-                "n_ctx": 4096,
+                "n_ctx": 32768,
             },
         ],
         "ktransformers": [
@@ -147,7 +147,7 @@ def init():
                 "engine": "ktransformers",
                 "model_path": "/data/deepseek-v3",
                 "n_gpu_layers": -1,
-                "n_ctx": 4096,
+                "n_ctx": 32768,
             },
         ],
     }

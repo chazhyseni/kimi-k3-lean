@@ -12,7 +12,7 @@ models:
     engine: llamacpp
     model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
     n_gpu_layers: -1
-    n_ctx: 4096
+    n_ctx: 32768
 
   # Qwen3.8-2.4T (2.4T, 95B active) via llama.cpp
   # IQ1_S = 508 GB. Needs ~508 GB RAM+VRAM combined.
@@ -20,7 +20,7 @@ models:
     engine: llamacpp
     model_path: unsloth/Qwen3.8-2.4T-A95B-GGUF:UD-IQ1_S
     n_gpu_layers: -1
-    n_ctx: 4096
+    n_ctx: 32768
 
   # MiniMax-M3 (428B, 23B active) via llama.cpp
   # IQ1_M = 128 GB. Smallest viable trillion-scale MoE. Runs on 128 GB RAM.
@@ -28,7 +28,7 @@ models:
     engine: llamacpp
     model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M
     n_gpu_layers: -1
-    n_ctx: 4096
+    n_ctx: 32768
 
   # DeepSeek-V3 (671B, 37B active) via ktransformers
   # ktransformers has native AMX/AVX-512/CUDA optimization for this model.
@@ -37,4 +37,4 @@ models:
   #   engine: ktransformers
   #   model_path: /data/deepseek-v3
   #   n_gpu_layers: -1
-  #   n_ctx: 4096
+  #   n_ctx: 32768

@@ -330,13 +330,13 @@ models:
     engine: llamacpp
     model_path: /home/user/.litmoe/models/kimi-k3/UD-IQ1_S
     n_gpu_layers: -1    # -1 = all layers to GPU, 0 = CPU only
-    n_ctx: 4096
+    n_ctx: 32768
 
   - id: minimax-m3
     engine: llamacpp
     model_path: /home/user/.litmoe/models/minimax-m3/UD-IQ1_M
     n_gpu_layers: 0     # CPU only if no GPU
-    n_ctx: 4096
+    n_ctx: 32768
 ```
 
 `n_gpu_layers` controls GPU offload in llama.cpp:

@@ -144,12 +144,13 @@ class Gateway:
 
 
 async def _stream_response(url: str, body: bytes, timeout: httpx.Timeout, headers: dict | None = None):
-    """Stream responses from upstream engine. Owns the httpx client lifecycle."""
+    """Stream SSE responses from upstream engine. Owns the httpx client lifecycle."""
     fwd_headers = headers or {"content-type": "application/json"}
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", url, content=body, headers=fwd_headers) as r:
-            async for chunk in r.aiter_bytes():
-                yield chunk
+            async for line in r.aiter_lines():
+                if line:
+                    yield line.encode() + b"\n"
 
 
 def _anthropic_to_openai(payload: dict) -> dict:
@@ -185,7 +186,7 @@ def _anthropic_to_openai(payload: dict) -> dict:
     out = {
         "model": payload.get("model"),
         "messages": messages,
-        "max_tokens": payload.get("max_tokens", 4096),
+        "max_tokens": payload.get("max_tokens", 8192),
         "stream": False,  # Anthropic streaming is different SSE format
     }
     if "temperature" in payload:
