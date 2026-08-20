@@ -20,7 +20,12 @@ class LlamaCppEngine(Engine):
     """Adapter for llama.cpp server (llama-server)."""
 
     def default_port(self) -> int:
-        return 8081
+        # Assign unique ports per model to avoid conflicts when running
+        # multiple models. Hash the model id to get a stable port.
+        base = 8081
+        if self.model.id:
+            return base + (hash(self.model.id) % 100)
+        return base
 
     def health_url(self) -> str:
         return f"http://127.0.0.1:{self.default_port()}/health"
