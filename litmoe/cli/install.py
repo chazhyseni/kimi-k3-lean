@@ -89,6 +89,15 @@ KNOWN_MODELS = {
         "default_quant": "Q4_K_M",
         "size_gb": {"Q3_K_M": 52, "Q4_K_M": 65, "Q6_K": 88, "Q8_0": 115, "BF16": 216},
     },
+    "kimi-linear-48b": {
+        "hf_repo": "mradermacher/Kimi-Linear-48B-A3B-Instruct-GGUF",
+        "engine": "llamacpp",
+        "quants": ["Q2_K", "Q3_K_S", "Q3_K_M", "Q3_K_L", "IQ4_XS",
+                   "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M", "Q6_K", "Q8_0"],
+        "default_quant": "Q4_K_M",
+        "size_gb": {"Q2_K": 18, "Q3_K_M": 24, "Q4_K_M": 30, "Q5_K_M": 35, "Q6_K": 40, "Q8_0": 52},
+        "file_layout": "root",
+    },
 }
 
 LLAMA_RELEASES_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
@@ -361,6 +370,16 @@ def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path
     dest = models_dir / model_name / quant
     dest.mkdir(parents=True, exist_ok=True)
 
+    # Some repos (e.g. mradermacher) store GGUFs as single files at root
+    # level, not in quant subdirectories like unsloth
+    file_layout = info.get("file_layout", "subdir")
+    
+    if file_layout == "root":
+        # Files are named like "Model-Q4_K_M.gguf" at root level
+        allow_patterns = f"*{quant}*.gguf"
+    else:
+        allow_patterns = f"{quant}/*"
+
     click.echo(f"  Downloading {repo} [{quant}] -> {dest}")
     try:
         from huggingface_hub import snapshot_download
@@ -372,8 +391,8 @@ def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path
 
     snapshot_download(
         repo_id=repo,
-        allow_patterns=f"{quant}/*",
-        local_dir=str(dest.parent),
+        allow_patterns=allow_patterns,
+        local_dir=str(dest),
     )
     # snapshot_download nests under <quant>/ ; normalize
     nested = dest.parent / quant
@@ -458,6 +477,7 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
       litmoe install --model gemma-4-31b      # 18 GB, 32 GB RAM
       litmoe install --model llama-4-scout    # 65 GB MoE, 96 GB RAM
       litmoe install --model deepseek-v4-flash # 83 GB MoE, 96 GB RAM
+      litmoe install --model kimi-linear-48b   # 30 GB MoE (3B active), 32 GB RAM
       litmoe install --model minimax-m3       # 128 GB MoE, 128 GB RAM
       litmoe install --model kimi-k3          # 594 GB MoE, 600+ GB RAM
       litmoe install --engine ktransformers   # ktransformers (Linux + NVIDIA only)
