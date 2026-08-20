@@ -122,47 +122,75 @@ class LlamaCppEngine(Engine):
         return cmd
 
     def start(self, log_dir: Path | None = None) -> None:
-        """Start the engine, with library path env vars set for the subprocess.
+        """Start the engine.
 
-        On macOS, sets BOTH DYLD_LIBRARY_PATH and DYLD_FALLBACK_LIBRARY_PATH.
-        DYLD_FALLBACK_LIBRARY_PATH is NOT stripped by SIP for non-restricted
-        (non-system) binaries, so it reliably makes shared libraries findable.
-
-        Also runs fix_macos_dylib_paths() at serve time to patch any existing
-        binary that was built before the fix was added to the install process.
+        On macOS, launches via /bin/bash to work around com.apple.provenance
+        which blocks Python's execve() from running the binary directly.
+        The wrapper script (rewritten at serve time with correct env vars)
+        sets DYLD_FALLBACK_LIBRARY_PATH and execs the binary.
+        On Linux, launches the binary directly with LD_LIBRARY_PATH.
         """
         cmd = self.build_command()
         env = os.environ.copy()
         env.update(self.model.env)
 
-        # Set library path env vars so the subprocess can find shared libs
-        lib_dir = getattr(self, "_lib_dir", None)
-        if lib_dir:
-            env.update(get_library_path_env(lib_dir))
-
-            # On macOS, fix dylib paths at serve time too — handles binaries
-            # that were built/installed before the fix was added
-            if is_macos():
-                # cmd[0] might be a wrapper script — resolve to actual binary
-                binary_path = Path(cmd[0])
-                actual_binary = lib_dir / "llama-server"
-                if actual_binary.exists():
-                    binary_path = actual_binary
-                fix_macos_dylib_paths(binary_path, Path(lib_dir))
-
-        log_dir = log_dir or Path("logs")
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / f"{self.model.id}.log"
+        # Prepare log file (used by all branches below)
+        ld = Path(log_dir) if log_dir else Path("logs")
+        ld.mkdir(parents=True, exist_ok=True)
+        log_file = ld / f"{self.model.id}.log"
         self._log_path = log_file
 
-        with open(log_file, "w") as logf:
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=logf,
-                stderr=subprocess.STDOUT,
-                env=env,
-                start_new_session=True,
+        lib_dir = getattr(self, "_lib_dir", None)
+        if lib_dir and is_macos():
+            # macOS: rewrite the wrapper script with correct env vars,
+            # then launch via /bin/bash (not execve) to bypass
+            # com.apple.provenance restrictions.
+            actual_binary = lib_dir / "llama-server"
+            wrapper = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local")) / "bin" / "llama-server"
+            wrapper.parent.mkdir(parents=True, exist_ok=True)
+            wrapper.write_text(
+                f"#!/bin/bash\n"
+                f"export DYLD_FALLBACK_LIBRARY_PATH={lib_dir}:$DYLD_FALLBACK_LIBRARY_PATH\n"
+                f"export DYLD_LIBRARY_PATH={lib_dir}:$DYLD_LIBRARY_PATH\n"
+                f"exec {actual_binary} \"$@\"\n"
             )
+            wrapper.chmod(0o755)
+
+            # Also fix dylib paths (best effort)
+            fix_macos_dylib_paths(actual_binary, Path(lib_dir))
+
+            # Launch via bash, not execve — bash can execute the binary
+            # even with com.apple.provenance
+            shell_cmd = f'"{wrapper}" ' + ' '.join(f'"{a}"' for a in cmd[1:])
+            with open(log_file, "w") as logf:
+                self.process = subprocess.Popen(
+                    ['/bin/bash', '-c', shell_cmd],
+                    stdout=logf,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+        elif lib_dir:
+            # Linux: direct launch with LD_LIBRARY_PATH
+            env.update(get_library_path_env(lib_dir))
+            with open(log_file, "w") as logf:
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=logf,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+        else:
+            # No lib_dir needed (prebuilt binary with system libs)
+            with open(log_file, "w") as logf:
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=logf,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
 
         self.base_url = f"http://127.0.0.1:{self.default_port()}"
         print(f"  {self.model.id}: started PID {self.process.pid}, logs: {log_file}")
