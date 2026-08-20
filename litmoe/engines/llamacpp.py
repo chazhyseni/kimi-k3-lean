@@ -145,27 +145,39 @@ class LlamaCppEngine(Engine):
 
         lib_dir = getattr(self, "_lib_dir", None)
         if lib_dir and is_macos():
-            # macOS: rewrite the wrapper script with correct env vars,
-            # then launch via /bin/bash (not execve) to bypass
-            # com.apple.provenance restrictions.
+            # macOS: launch via /bin/bash to bypass com.apple.provenance.
+            # Only set DYLD env vars if the binary actually needs them.
+            # Prebuilt binaries have correct rpath and DON'T need DYLD vars —
+            # setting them can actually break the binary by overriding the
+            # default library search path with wrong libraries.
+            # Source-built binaries may need DYLD_FALLBACK_LIBRARY_PATH.
             actual_binary = lib_dir / "llama-server"
             wrapper = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local")) / "bin" / "llama-server"
             wrapper.parent.mkdir(parents=True, exist_ok=True)
-            wrapper.write_text(
-                f"#!/bin/bash\n"
-                f"export DYLD_FALLBACK_LIBRARY_PATH={lib_dir}:$DYLD_FALLBACK_LIBRARY_PATH\n"
-                f"export DYLD_LIBRARY_PATH={lib_dir}:$DYLD_LIBRARY_PATH\n"
-                f"exec {actual_binary} \"$@\"\n"
-            )
+
+            # Check if this is a prebuilt binary (has its own dylibs in lib_dir
+            # AND the binary runs without DYLD vars)
+            is_prebuilt = "prebuilt" in str(lib_dir)
+
+            if is_prebuilt:
+                # Prebuilt: no DYLD env vars needed, just launch directly via bash
+                wrapper.write_text(
+                    f"#!/bin/bash\n"
+                    f"exec {actual_binary} \"$@\"\n"
+                )
+            else:
+                # Source build: set DYLD_FALLBACK_LIBRARY_PATH
+                wrapper.write_text(
+                    f"#!/bin/bash\n"
+                    f"export DYLD_FALLBACK_LIBRARY_PATH={lib_dir}:$DYLD_FALLBACK_LIBRARY_PATH\n"
+                    f"export DYLD_LIBRARY_PATH={lib_dir}:$DYLD_LIBRARY_PATH\n"
+                    f"exec {actual_binary} \"$@\"\n"
+                )
             wrapper.chmod(0o755)
 
             # Launch via bash, not execve — bash can execute the binary
             # even with com.apple.provenance
             shell_cmd = f'"{wrapper}" ' + ' '.join(f'"{a}"' for a in cmd[1:])
-            print(f"  [debug] shell_cmd: {shell_cmd}")
-            print(f"  [debug] wrapper content: {wrapper.read_text().strip()}")
-            print(f"  [debug] actual_binary exists: {actual_binary.exists()}")
-            print(f"  [debug] model file exists: {Path(cmd[2]).exists() if len(cmd) > 2 else 'n/a'}")
             with open(log_file, "w") as logf:
                 self.process = subprocess.Popen(
                     ['/bin/bash', '-c', shell_cmd],
