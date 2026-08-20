@@ -156,9 +156,6 @@ class LlamaCppEngine(Engine):
             )
             wrapper.chmod(0o755)
 
-            # Also fix dylib paths (best effort)
-            fix_macos_dylib_paths(actual_binary, Path(lib_dir))
-
             # Launch via bash, not execve — bash can execute the binary
             # even with com.apple.provenance
             shell_cmd = f'"{wrapper}" ' + ' '.join(f'"{a}"' for a in cmd[1:])
