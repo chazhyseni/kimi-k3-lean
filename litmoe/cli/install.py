@@ -232,9 +232,12 @@ def _install_llamacpp_source(prefix: Path) -> Path:
         if clone.returncode != 0:
             raise RuntimeError(f"git clone failed: {clone.stderr.strip()[:200]}")
 
-        click.echo("  Building (cmake + make, CPU-only, this takes a few minutes)...")
+        click.echo("  Building (cmake + make, CPU-only with BLAS, this takes a few minutes)...")
         cmake = subprocess.run(
-            ["cmake", "-B", "build", "-DGGML_CUDA=OFF", "-DGGML_BLAS=OFF",
+            ["cmake", "-B", "build",
+             "-DGGML_CUDA=OFF", "-DGGML_BLAS=ON",
+             "-DGGML_BLAS_VENDOR=OpenBLAS",
+             "-DGGML_NATIVE=ON",
              "-DCMAKE_BUILD_TYPE=Release"],
             cwd=tmpdir, capture_output=True, text=True, timeout=120,
         )

@@ -18,11 +18,21 @@ COPY litmoe ./litmoe
 RUN pip install --no-cache-dir -e .
 
 # Optional: install engines
-# RUN pip install kt-kernel
-# RUN git clone https://github.com/ggml-org/llama.cpp && \
-#     cd llama.cpp && cmake -B build -DGGML_CUDA=ON && \
-#     cmake --build build --config Release && \
-#     cp build/bin/llama-server /usr/local/bin/
+# llama.cpp (CPU-only with BLAS + native CPU features):
+#   RUN apt-get install -y build-essential cmake pkg-config libopenblas-dev libopenblas0
+#   RUN git clone https://github.com/ggml-org/llama.cpp && \
+#       cd llama.cpp && \
+#       cmake -B build -DGGML_CUDA=OFF -DGGML_BLAS=ON \
+#             -DGGML_BLAS_VENDOR=OpenBLAS -DGGML_NATIVE=ON \
+#             -DCMAKE_BUILD_TYPE=Release && \
+#       cmake --build build --config Release -j --target llama-server && \
+#       cp build/bin/llama-server /usr/local/bin/ && \
+#       cp build/bin/lib*.so* /usr/local/lib/ && ldconfig
+#
+# ktransformers (Linux + NVIDIA GPU only):
+#   RUN git clone https://github.com/kvcache-ai/ktransformers.git && \
+#       cd ktransformers && git submodule update --init --recursive && \
+#       pip install ./kt-kernel && pip install .
 
 # Config
 ENV LITMOE_CONFIG=/config/models.yaml
