@@ -124,6 +124,14 @@ class Gateway:
         from pathlib import Path
         ld = Path(log_dir) if log_dir else None
         for idx, model in enumerate(self.config.models):
+            # Auto-fix stale context sizes that are too small for real clients
+            # Claude Code sends ~30K token system prompts, Hermes sends ~46K
+            if model.n_ctx and model.n_ctx < 8192:
+                logger.warning(
+                    "Model %s has n_ctx=%d (too small for most clients), "
+                    "auto-increasing to 32768", model.id, model.n_ctx
+                )
+                model.n_ctx = 32768
             logger.info("Loading %s via %s...", model.id, model.engine)
             engine = make_engine(model)
             # Assign unique port: first model 8081, second 8082, etc.
