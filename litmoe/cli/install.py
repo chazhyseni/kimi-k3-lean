@@ -267,6 +267,17 @@ def _install_llamacpp_source(prefix: Path) -> Path:
         for so in list(build_bin.glob("lib*.so*")) + list(build_bin.glob("lib*.dylib*")):
             shutil.copy2(str(so), str(dest_dir))
 
+        # Fix rpath on macOS so the binary finds its dylibs without a wrapper
+        if platform.system() == "Darwin":
+            try:
+                subprocess.run(
+                    ["install_name_tool", "-add_rpath", str(dest_dir),
+                     str(dest_dir / "llama-server")],
+                    capture_output=True, timeout=10,
+                )
+            except Exception:
+                pass  # best effort
+
         # Create a wrapper script that sets library path
         # (LD_LIBRARY_PATH on Linux, DYLD_LIBRARY_PATH on macOS)
         bin_dir = prefix / "bin"
