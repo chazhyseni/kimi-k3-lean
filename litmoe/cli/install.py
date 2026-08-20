@@ -369,7 +369,7 @@ def install_ktransformers() -> None:
 # ---------------------------------------------------------------------------
 
 def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path:
-    """Download model weights from HuggingFace. Returns the local directory."""
+    """Download model weights from HuggingFace. Returns path to first GGUF shard."""
     info = KNOWN_MODELS[model_name]
     quant = quant or info["default_quant"]
 
@@ -410,12 +410,19 @@ def download_model(model_name: str, quant: str | None, models_dir: Path) -> Path
         allow_patterns=allow_patterns,
         local_dir=str(dest),
     )
-    # snapshot_download nests under <quant>/ ; normalize
-    nested = dest.parent / quant
-    if nested != dest and nested.exists():
-        for item in nested.iterdir():
-            shutil.move(str(item), str(dest))
-        nested.rmdir()
+
+    # snapshot_download may nest files under a subdirectory matching the
+    # allow_pattern. Flatten any nesting so GGUFs are directly in dest/.
+    for nested_dir in dest.iterdir():
+        if nested_dir.is_dir() and nested_dir != dest:
+            # Move files up from nested directory
+            for item in nested_dir.iterdir():
+                target = dest / item.name
+                if target.exists():
+                    target.unlink()
+                shutil.move(str(item), str(target))
+            nested_dir.rmdir()
+            click.echo(f"  Flattened nested directory: {nested_dir.name}/")
 
     # Find the first GGUF shard — llama-server needs a file path, not a directory
     gguf_files = sorted(dest.glob("*.gguf"))
@@ -551,6 +558,7 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
 
         # Set model-native context size if user didn't override (--n-ctx default)
         if n_ctx == 65536:
+            # Native context sizes per model
             native_ctx = {
                 "deepseek-v4-flash": 131072,   # 128K MLA
                 "kimi-linear-48b": 1048576,     # 1M KDA+MLA
@@ -563,6 +571,51 @@ def install_cmd(targets, model_name, quant, engine, models_dir, prefix, n_ctx, c
                 "llama-4-scout": 10485760,     # 10M
             }
             n_ctx = native_ctx.get(model_name, 131072)  # default 128K
+
+            # Check if model + KV cache fits in available memory.
+            # If not, reduce context to what fits.
+            import os as _os
+            try:
+                total_mem = _os.sysconf("SC_PAGE_SIZE") * _os.sysconf("SC_PHYS_PAGES")
+            except (ValueError, OSError, AttributeError):
+                total_mem = None
+
+            if total_mem:
+                total_mem_gb = total_mem / 1e9
+                model_size_gb = info["size_gb"].get(quant_val, 0)
+
+                # KV cache per model at native context (rough estimates)
+                # MLA/KDA models use much less than standard attention
+                kv_per_ctx = {
+                    "deepseek-v4-flash": 23.1 / 131072,    # MLA, ~23 GB at 128K
+                    "kimi-linear-48b": 15.0 / 1048576,      # KDA, ~15 GB at 1M
+                    "kimi-k3": 49.9 / 262144,              # MLA, ~50 GB at 256K
+                    "qwen3.8-2.4t": 1580 / 262144,         # standard, ~1580 GB at 256K
+                    "qwen3.8-9b-distill": 17.2 / 131072,  # dense, ~17 GB at 128K
+                    "minimax-m3": 386.5 / 1048576,        # standard, ~387 GB at 1M
+                    "gemma-4-12b": 85.9 / 131072,          # dense, ~86 GB at 128K
+                    "gemma-4-31b": 86.0 / 131072,          # dense
+                    "llama-4-scout": 206.2 / 10485760,    # MoE, ~206 GB at 10M
+                }
+                kv_rate = kv_per_ctx.get(model_name, 17.2 / 131072)
+                kv_gb = kv_rate * n_ctx
+
+                # Need: model_size + kv_cache + 3 GB overhead < total_mem * 0.9
+                needed_gb = model_size_gb + kv_gb + 3
+                avail_gb = total_mem_gb * 0.9
+
+                if needed_gb > avail_gb:
+                    # Reduce context to fit
+                    max_kv_gb = avail_gb - model_size_gb - 3
+                    if max_kv_gb > 1:
+                        n_ctx = int(max_kv_gb / kv_rate)
+                        # Round down to nearest 4096
+                        n_ctx = (n_ctx // 4096) * 4096
+                        n_ctx = max(n_ctx, 8192)  # minimum 8K
+                        click.echo(f"  NOTE: reduced context to {n_ctx} to fit "
+                                   f"{model_size_gb:.0f} GB model + KV cache in {total_mem_gb:.0f} GB RAM")
+                    else:
+                        click.echo(f"  WARNING: model ({model_size_gb:.0f} GB) may not fit in {total_mem_gb:.0f} GB RAM")
 
         add_model_to_config(model_name, engine_for_model, dest, n_ctx, config_path)
         click.echo()

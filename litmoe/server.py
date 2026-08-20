@@ -125,8 +125,7 @@ class Gateway:
         ld = Path(log_dir) if log_dir else None
         for idx, model in enumerate(self.config.models):
             # Auto-fix stale context sizes — set to model's native context
-            # All models support at least 128K. KV cache size depends on
-            # architecture (MLA/KDA use far less than standard attention).
+            # Also check if model + KV cache fits in available memory
             if model.n_ctx and model.n_ctx < 16384:
                 model_id = model.id or ""
                 native_ctx = {
@@ -141,6 +140,35 @@ class Gateway:
                     "llama-4-scout": 10485760,     # 10M
                 }
                 new_ctx = native_ctx.get(model_id, 131072)  # default 128K
+
+                # Check memory fit
+                import os as _os
+                try:
+                    total_mem = _os.sysconf("SC_PAGE_SIZE") * _os.sysconf("SC_PHYS_PAGES")
+                    total_mem_gb = total_mem / 1e9
+                    # KV cache rate per token (bytes) — rough per-model estimates
+                    kv_rates = {
+                        "deepseek-v4-flash": 23.1 / 131072,
+                        "kimi-linear-48b": 15.0 / 1048576,
+                        "kimi-k3": 49.9 / 262144,
+                        "qwen3.8-9b-distill": 17.2 / 131072,
+                        "minimax-m3": 386.5 / 1048576,
+                        "gemma-4-12b": 85.9 / 131072,
+                        "gemma-4-31b": 86.0 / 131072,
+                        "llama-4-scout": 206.2 / 10485760,
+                    }
+                    kv_rate = kv_rates.get(model_id, 17.2 / 131072)
+                    kv_gb = kv_rate * new_ctx
+                    # Estimate model size from config — we don't know exact
+                    # but 90% of memory minus 3 GB overhead is the budget
+                    avail_gb = total_mem_gb * 0.9 - 3
+                    if kv_gb > avail_gb:
+                        # Reduce context to fit (assume model is already loaded)
+                        max_ctx = int(avail_gb / kv_rate)
+                        new_ctx = max((max_ctx // 4096) * 4096, 8192)
+                except (ValueError, OSError, AttributeError):
+                    pass
+
                 logger.warning(
                     "Model %s has n_ctx=%d (too small), setting to %d",
                     model.id, model.n_ctx, new_ctx
