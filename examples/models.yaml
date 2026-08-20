@@ -6,35 +6,29 @@ port: 8080
 api_key: null
 
 models:
-  # Kimi-K3 (2.78T, 93B active) via llama.cpp
-  # IQ1_S = 594 GB. Needs ~594 GB RAM+VRAM combined.
-  - id: kimi-k3
+  # Small models: 256K context (KV cache is tiny — <4 GB even at 512K)
+  - id: qwen3.8-9b-distill
     engine: llamacpp
-    model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
+    model_path: unsloth/Qwen3.8-9B-Distill-GGUF:Q4_K_M
     n_gpu_layers: -1
-    n_ctx: 65536
+    n_ctx: 262144    # 256K — model supports 1M with YaRN
 
-  # Qwen3.8-2.4T (2.4T, 95B active) via llama.cpp
-  # IQ1_S = 508 GB. Needs ~508 GB RAM+VRAM combined.
-  - id: qwen3.8-2.4t
+  - id: kimi-linear-48b
     engine: llamacpp
-    model_path: unsloth/Qwen3.8-2.4T-A95B-GGUF:UD-IQ1_S
+    model_path: mradermacher/Kimi-Linear-48B-A3B-Instruct-GGUF:Q4_K_M
     n_gpu_layers: -1
-    n_ctx: 65536
+    n_ctx: 262144    # 256K — KDA attention uses tiny KV cache (~4 GB at 512K)
 
-  # MiniMax-M3 (428B, 23B active) via llama.cpp
-  # IQ1_M = 128 GB. Smallest viable trillion-scale MoE. Runs on 128 GB RAM.
-  - id: minimax-m3
+  # Large MoE: 64K context (83 GB model leaves little room for KV cache)
+  - id: deepseek-v4-flash
     engine: llamacpp
-    model_path: unsloth/MiniMax-M3-GGUF:UD-IQ1_M
+    model_path: unsloth/DeepSeek-V4-Flash-0731-GGUF:UD-IQ1_S
     n_gpu_layers: -1
-    n_ctx: 65536
+    n_ctx: 65536     # 64K — KV cache = 5.8 GB, model = 83 GB
 
-  # DeepSeek-V3 (671B, 37B active) via ktransformers
-  # ktransformers has native AMX/AVX-512/CUDA optimization for this model.
-  # Requires safetensors directory + GGUF for quantized experts.
-  # - id: deepseek-v3
-  #   engine: ktransformers
-  #   model_path: /data/deepseek-v3
+  # Trillion-scale: 128K context (models support 256K-1M)
+  # - id: kimi-k3
+  #   engine: llamacpp
+  #   model_path: unsloth/Kimi-K3-GGUF:UD-IQ1_S
   #   n_gpu_layers: -1
-  #   n_ctx: 65536
+  #   n_ctx: 131072  # 128K
