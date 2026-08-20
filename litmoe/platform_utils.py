@@ -106,8 +106,12 @@ def fix_macos_dylib_paths(binary: Path, lib_dir: Path) -> bool:
        paths and set its install ID to its absolute path.
     3. Add an rpath entry pointing to lib_dir as a fallback.
 
-    This is the nuclear option — after this, the binary and all its dylibs
-    have absolute paths baked in and don't need any DYLD_* env vars at runtime.
+    Also strips com.apple.provenance attribute by copying the binary over
+    itself — macOS blocks install_name_tool and subprocess execution on
+    files with this attribute.
+
+    After this, the binary and all its dylibs have absolute paths baked in
+    and don't need any DYLD_* env vars at runtime.
 
     Returns True if any fixes were applied (or if not on macOS).
     """
@@ -119,6 +123,25 @@ def fix_macos_dylib_paths(binary: Path, lib_dir: Path) -> bool:
 
     lib_dir_abs = str(lib_dir.resolve())
     fixes_applied = False
+
+    # Strip com.apple.provenance by copying binary over itself.
+    # macOS applies this attribute to files created by certain processes
+    # and it blocks both install_name_tool modifications and subprocess
+    # execution from Python. Copying strips the attribute.
+    def _strip_provenance(path: Path) -> None:
+        try:
+            import tempfile
+            tmp = path.parent / f".{path.name}.tmp"
+            shutil.copy2(str(path), str(tmp))
+            shutil.move(str(tmp), str(path))
+            os.chmod(str(path), 0o755)
+        except Exception:
+            pass
+
+    _strip_provenance(binary)
+    for dylib in lib_dir.glob("*.dylib*"):
+        if dylib.is_file():
+            _strip_provenance(dylib)
 
     def get_otool_l(path: Path) -> list[str]:
         """Get shared library references via otool -L."""
