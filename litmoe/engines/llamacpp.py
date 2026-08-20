@@ -150,14 +150,19 @@ class LlamaCppEngine(Engine):
             # Then launch via /bin/bash as a belt-and-suspenders approach.
             actual_binary = lib_dir / "llama-server"
             if actual_binary.exists():
-                try:
-                    import shutil as _shutil
-                    tmp = actual_binary.parent / ".llama-server.tmp"
-                    _shutil.copy2(str(actual_binary), str(tmp))
-                    _shutil.move(str(tmp), str(actual_binary))
-                    os.chmod(str(actual_binary), 0o755)
-                except Exception:
-                    pass
+                # Strip com.apple.provenance by copying binary over itself.
+                # This MUST succeed — if it fails, the binary can't be launched.
+                import shutil as _shutil
+                tmp = actual_binary.parent / ".llama-server.tmp"
+                _shutil.copy2(str(actual_binary), str(tmp))
+                _shutil.move(str(tmp), str(actual_binary))
+                os.chmod(str(actual_binary), 0o755)
+                # Also strip provenance from all dylibs
+                for dylib in actual_binary.parent.glob("*.dylib*"):
+                    if dylib.is_file():
+                        dtmp = dylib.parent / f".{dylib.name}.tmp"
+                        _shutil.copy2(str(dylib), str(dtmp))
+                        _shutil.move(str(dtmp), str(dylib))
 
             wrapper = Path(os.environ.get("LITMOE_PREFIX", Path.home() / ".local")) / "bin" / "llama-server"
             wrapper.parent.mkdir(parents=True, exist_ok=True)
