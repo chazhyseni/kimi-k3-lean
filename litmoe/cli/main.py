@@ -232,6 +232,8 @@ def stop():
                 click.echo(f"  Sending SIGTERM to {pid}")
                 try:
                     os.kill(int(pid), signal.SIGTERM)
+                except PermissionError:
+                    subprocess.run(["kill", "-TERM", str(pid)])
                 except ProcessLookupError:
                     pass
     if not found:
